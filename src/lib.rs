@@ -1,8 +1,7 @@
 #![no_std]
 //! # funcan-rs
 //!
-//! # Raw Module
-//!
-//! The `raw` module provides an abstract interface for working with raw CAN frames.
+/// Raw CAN Frames
 pub mod raw;
-
+/// Finite States Machines
+pub mod machine;
