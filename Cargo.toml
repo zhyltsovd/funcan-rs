@@ -1,0 +1,16 @@
+[package]
+name = "funcan-rs"
+version = "0.1.0"
+authors = ["Konstantin Blokhin <konstantin.blohin@gmail.com>", "Dmitry Zhyltsov <zhyltsovd@gmail.com>"]
+edition = "2021"
+description = "CANOpen implementation"
+license = "MIT"
+repository = "https://github.com/zhyltsovd/funcan-rs"
+documentation = "https://docs.rs/funcan-rs"
+readme = "README.md"
+keywords = ["can", "CANOpen"]
+categories = ["embedded", "hardware-support", "no-std"]
+publish = true
+
+[dependencies]
+
