@@ -22,3 +22,13 @@ pub struct CANFrame {
     /// This is an array of 8 bytes containing the payload of the frame.
     pub can_data: [u8; 8],
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse() {
+    }
+
+}
