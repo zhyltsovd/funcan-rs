@@ -17,7 +17,10 @@ pub struct CANFrame {
     ///
     /// This is a 32-bit value that uniquely identifies the frame in the CAN network.
     pub can_cobid: u32,
-
+    
+    /// The length of the CAN frame
+    pub can_len: usize,
+    
     /// The data of the CAN frame.
     ///
     /// This is an array of 8 bytes containing the payload of the frame.
@@ -28,6 +31,7 @@ impl Default for CANFrame {
     fn default() -> Self {
         Self {
             can_cobid: 0,
+            can_len: 0,
             can_data: [0; 8]
         }
     }
@@ -54,6 +58,17 @@ pub struct CANFrameMachine {
     index: usize,   
 }
 
+impl Default for CANFrameMachine {
+    fn default() -> Self {
+        Self {
+            state: State::Init,
+            can_frame: CANFrame::default(),
+            len: 0,
+            index: 0,
+        }
+    }
+}
+
 impl CANFrameMachine {
     fn get_data_byte(self: &mut Self, x: u8) {                     
         if self.len > 1 {
@@ -77,6 +92,7 @@ impl MachineTrans<u8> for CANFrameMachine {
     fn initial(self: &mut Self) {
         self.can_frame.can_cobid = 0;
         self.can_frame.can_data.fill(0);
+        self.can_frame.can_len = 0;
         self.len = 0;
         self.index = 0;
         self.state = State::Init;   
@@ -106,7 +122,9 @@ impl MachineTrans<u8> for CANFrameMachine {
             
             State::Id3 => {
                 self.state = State::Len;
-                self.len = x.into();
+                let len: usize = x.into();
+                self.len = len;
+                self.can_frame.can_len = len;
             }
             
             State::Len => {
