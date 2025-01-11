@@ -1,6 +1,6 @@
 //! # Machine Module
 //!
-//! This module offers traits for creating and managing a finite state machine.
+//! This module offers traits for working with abstract finite state machines.
 
 /// A trait that represents a finite state machine (FSM).
 ///
@@ -10,10 +10,10 @@
 ///
 /// # Associated Types
 ///
-/// - `FinalValue`: The type that represents the final value or result 
-///   produced by the state machine once it reaches a terminal state.
+/// - `Observation`: The type that represents abstract observations of machine states or outputs.
 pub trait MachineTrans<X> {
-    type FinalValue;
+    /// An associated type for capturing the machine's state or output observations.
+    type Observation;
 
     /// Transitions the state machine to a new state based on the input.
     ///
@@ -24,44 +24,35 @@ pub trait MachineTrans<X> {
     /// # Parameters
     ///
     /// - `x`: An input value of type `X` that influences the state change.
-    fn transition(self: &mut Self, x: X);
+    fn transit(self: &mut Self, x: X);
 
-    /// Checks if the state machine has reached a final state.
+    /// Makes an observation of the machine's current state.
     ///
-    /// This method returns an `Option` containing a final value if the 
-    /// machine is in a terminal state, otherwise it returns `None`.
+    /// This method returns an abstract representation of the state or output
+    /// of the machine as defined by the `Observation` associated type.
+    fn observe(self: &Self) -> Self::Observation;
+
+    /// Resets the machine's state to its initial state.
     ///
-    /// # Return Value
-    ///
-    /// An `Option<Self::FinalValue>` that contains the output if the 
-    /// machine is finished; otherwise, `None`.
-    fn is_final(self: &Self) -> Option<Self::FinalValue>;
+    /// This method should bring the machine back to its starting condition.
+    fn initial(self: &mut Self);
 }
 
-/// A trait for finite state machines that can produce output during operation.
+/// A trait for machines that have some final states and an associated value.
 ///
-/// This trait adds the capability to generate output from the current state 
-/// of the machine, even if it hasn't reached a terminal state yet. It provides 
-/// flexibility in managing intermediate results or signals from the machine.
-///
-/// # Associated Types
-///
-/// - `Output`: The type of data that the machine can output based on its 
-///   current state.
-pub trait MachineWithOutput {
-    type Output;
+/// This is useful for cases where a machine can complete its execution
+/// and produce a final value outcome.
+pub trait Final {
+    /// An associated type representing the value corresponding to a final state.
+    type FinalValue;
 
-    /// Retrieves the current output of the state machine.
+    /// Determines if the current state is a final state.
     ///
-    /// This method returns an `Option` containing an output value if 
-    /// it can be determined from the machine's current state; otherwise, 
-    /// it returns `None`.
+    /// # Returns
     ///
-    /// # Return Value
-    ///
-    /// An `Option<Self::Output>` that contains the output if available; 
-    /// otherwise, `None`.
-    fn output(self: &Self) -> Option<Self::Output>;
+    /// - `None` if not in a final state.
+    /// - `Some(val)` with `val` of type `FinalValue` if in a final state.
+    fn is_final(self: &Self) -> Option<Self::FinalValue>;
 }
 
 /// Represents the composition of two finite state machines,
@@ -73,35 +64,46 @@ pub struct Comp<M0, M1> {
     pub m1: M1,
 }
 
-/// Allows for the composition of two finite state machines `M0` and `M1`.
-/// This trait implementation is applicable when the final values of machine `M0`
-/// can be used as inputs to machine `M1`. 
+/// Implementation of the `MachineTrans` trait for the composition of two finite state machines, `M0` and `M1`.
+///
+/// This is applicable when the final values of machine `M0` can be used as inputs to machine `M1`.
 /// 
 /// A common use case is where `M0` processes and decodes some low-level input
 /// to generate higher-level inputs for machine `M1`.
 impl<X, M0, M1> MachineTrans<X> for Comp<M0, M1>
 where
     M0: MachineTrans<X>,
-    M1: MachineTrans<<M0 as MachineTrans<X>>::FinalValue>
+    <M0 as MachineTrans<X>>::Observation: Final,
+    M1: MachineTrans<<<M0 as MachineTrans<X>>::Observation as Final>::FinalValue>
 {
-    /// The final value type produced by the composed machines.
-    type FinalValue = <M1 as MachineTrans<<M0 as MachineTrans<X>>::FinalValue>>::FinalValue;
+    /// Observable values of the composed machines derived from `M1`.
+    type Observation = <M1 as MachineTrans<<<M0 as MachineTrans<X>>::Observation as Final>::FinalValue>>::Observation;
     
     /// Processes an input `x` by passing it through machine `M0`.
-    /// If `M0` reaches a final state, its output is passed as input to machine `M1`.
-    fn transition(self: &mut Self, x: X) {
-        self.m0.transition(x);
-        match self.m0.is_final() {
-            Some(y) => {
-                self.m1.transition(y);
-            }
-            None => {}
+    ///
+    /// If `M0` reaches a final state, its output is utilized as input for machine `M1`.
+    fn transit(self: &mut Self, x: X) {
+        self.m0.transit(x);
+        if let Some(y) = self.m0.observe().is_final() {
+            // Reset `m0` to initial state
+            self.m0.initial();
+            // Transition `m1` with the final state's value of `m0`
+            self.m1.transit(y);
         }
     }
 
-    /// Checks if the composed machines have reached a final state.
-    /// Returns the final value of machine `M1` if it has reached a final state.
-    fn is_final(self: &Self) -> Option<Self::FinalValue> {
-        self.m1.is_final()
+    /// Observes and returns the current state of the composed machine.
+    ///
+    /// The observation is based on `M1`.
+    fn observe(self: &Self) -> Self::Observation {
+        self.m1.observe()
+    }
+
+    /// Resets both `M0` and `M1` to their initial states.
+    ///
+    /// Ensures that the entire composite machine starts at its initial configuration.
+    fn initial(self: &mut Self) {
+        self.m0.initial();
+        self.m1.initial();
     }
 }
