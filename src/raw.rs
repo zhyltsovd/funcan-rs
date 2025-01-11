@@ -75,7 +75,6 @@ impl CANFrameMachine {
             self.len = self.len - 1;
             self.state = State::Data;
             self.can_frame.can_data[self.index] = x;
-            self.index = self.index + 1;
         } else if self.len == 1 {
             self.len = self.len - 1;
             self.state = State::Final;
@@ -83,6 +82,8 @@ impl CANFrameMachine {
         } else {
             self.state = State::Final;
         }
+
+        self.index = self.index + 1;
     }
 }
 
@@ -99,6 +100,7 @@ impl MachineTrans<u8> for CANFrameMachine {
     }
 
     fn transit(self: &mut Self, x: u8) {
+        
         match &self.state {
             State::Init => {
                 self.state = State::Id0;
@@ -148,14 +150,21 @@ impl MachineTrans<u8> for CANFrameMachine {
             }
             
             State::Final => {
-                // do nothing
+                self.index = self.index + 1; 
             }          
         }
     }
     
     fn observe(self: &Self) -> Self::Observation {
         match self.state {
-            State::Final => Some(self.can_frame),
+            State::Final => {
+                // should consume all input
+                if self.index == 8 {
+                    Some(self.can_frame)
+                } else {
+                    None
+                }
+            },
             _ => None
         }
     }
@@ -173,7 +182,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse() {
+    fn test_raw_can_frame_parsing() {
+
+        let frame = [0x02, 0x07, 0x00, 0x00, // cobid
+                     0x01, 0x00, 0x00, 0x00, // length with padding
+                     0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 // data
+        ];
+
+        let mut parser = CANFrameMachine::default();
+
+        for x in frame {
+            parser.transit(x);
+        }
+
+        let result = parser.observe().is_final().unwrap();
+
+        assert_eq!(result.can_cobid, 0x702);
+        assert_eq!(result.can_len, 1);
+        assert_eq!(result.can_data[0], 0x7f);
+        
     }
 
 }
