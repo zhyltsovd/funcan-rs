@@ -9,6 +9,7 @@ use crate::machine::*;
 /// # Fields
 ///
 /// * `can_cobid` - The CAN identifier (COB-ID) of the frame. This is a 32-bit value that uniquely identifies the frame in the CAN network.
+/// * `can_len` - The length of the CAN frame. Number of valid bytes in `can_data`
 /// * `can_data` - The data of the CAN frame. This is an array of 8 bytes containing the payload of the frame.
 ///
 #[derive(Debug, Clone, Copy)]
@@ -17,10 +18,10 @@ pub struct CANFrame {
     ///
     /// This is a 32-bit value that uniquely identifies the frame in the CAN network.
     pub can_cobid: u32,
-    
+
     /// The length of the CAN frame
     pub can_len: usize,
-    
+
     /// The data of the CAN frame.
     ///
     /// This is an array of 8 bytes containing the payload of the frame.
@@ -32,11 +33,12 @@ impl Default for CANFrame {
         Self {
             can_cobid: 0,
             can_len: 0,
-            can_data: [0; 8]
+            can_data: [0; 8],
         }
     }
 }
 
+/// Represents the possible states within a CAN frame processing sequence.
 enum State {
     Init,
     Id0,
@@ -48,14 +50,15 @@ enum State {
     Skip1,
     Skip2,
     Data,
-    Final
+    Final,
 }
 
+/// A state machine designed to process and construct raw CAN frames.
 pub struct CANFrameMachine {
     state: State,
     can_frame: CANFrame,
     len: usize,
-    index: usize,   
+    index: usize,
 }
 
 impl Default for CANFrameMachine {
@@ -70,7 +73,11 @@ impl Default for CANFrameMachine {
 }
 
 impl CANFrameMachine {
-    fn get_data_byte(self: &mut Self, x: u8) {                     
+    /// Processes an incoming data byte, storing it in the CAN frame's data array.
+    ///
+    /// This method updates the state and manages the index where the byte is stored.
+    /// Depending on the remaining length, it sets the next state appropriately.
+    fn get_data_byte(self: &mut Self, x: u8) {
         if self.len > 1 {
             self.len = self.len - 1;
             self.state = State::Data;
@@ -90,17 +97,21 @@ impl CANFrameMachine {
 impl MachineTrans<u8> for CANFrameMachine {
     type Observation = Option<CANFrame>;
 
+    /// Resets the machine's state and the CAN frame data to their initial conditions.
     fn initial(self: &mut Self) {
         self.can_frame.can_cobid = 0;
         self.can_frame.can_data.fill(0);
         self.can_frame.can_len = 0;
         self.len = 0;
         self.index = 0;
-        self.state = State::Init;   
+        self.state = State::Init;
     }
 
+    /// Consumes an input byte and transitions the state machine according to the current state.
+    ///
+    /// Processes the input byte `x` and transitions the state machine to the next state
+    /// as part of building a CAN frame.
     fn transit(self: &mut Self, x: u8) {
-        
         match &self.state {
             State::Init => {
                 self.state = State::Id0;
@@ -109,52 +120,55 @@ impl MachineTrans<u8> for CANFrameMachine {
 
             State::Id0 => {
                 self.state = State::Id1;
-                self.can_frame.can_cobid = self.can_frame.can_cobid | ((x as u32) <<  8);
+                self.can_frame.can_cobid = self.can_frame.can_cobid | ((x as u32) << 8);
             }
-            
+
             State::Id1 => {
                 self.state = State::Id2;
                 self.can_frame.can_cobid = self.can_frame.can_cobid | ((x as u32) << 16);
             }
-            
+
             State::Id2 => {
                 self.state = State::Id3;
                 self.can_frame.can_cobid = self.can_frame.can_cobid | ((x as u32) << 24);
             }
-            
+
             State::Id3 => {
                 self.state = State::Len;
                 let len: usize = x.into();
                 self.len = len;
                 self.can_frame.can_len = len;
             }
-            
+
             State::Len => {
                 self.state = State::Skip0;
             }
-            
+
             State::Skip0 => {
-                self.state = State::Skip1;  
+                self.state = State::Skip1;
             }
-            
+
             State::Skip1 => {
                 self.state = State::Skip2;
             }
-            
+
             State::Skip2 => {
                 self.get_data_byte(x);
             }
-            
+
             State::Data => {
                 self.get_data_byte(x);
             }
-            
+
             State::Final => {
-                self.index = self.index + 1; 
-            }          
+                self.index = self.index + 1;
+            }
         }
     }
-    
+
+    /// Observes the current machine state to check for a completed CAN frame.
+    ///
+    /// Returns `Some(CANFrame)` if in a final state with a valid frame, otherwise `None`.
     fn observe(self: &Self) -> Self::Observation {
         match self.state {
             State::Final => {
@@ -164,14 +178,21 @@ impl MachineTrans<u8> for CANFrameMachine {
                 } else {
                     None
                 }
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
 
 impl Final for Option<CANFrame> {
     type FinalValue = CANFrame;
+
+    /// Determines if an `Option<CANFrame>` contains a final frame.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(CANFrame)` if the option contains a valid frame.
+    /// - `None` if the option is empty.
     fn is_final(self: Self) -> Option<Self::FinalValue> {
         self
     }
@@ -183,10 +204,10 @@ mod tests {
 
     #[test]
     fn test_raw_can_frame_parsing() {
-
-        let frame = [0x02, 0x07, 0x00, 0x00, // cobid
-                     0x01, 0x00, 0x00, 0x00, // length with padding
-                     0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 // data
+        let frame = [
+            0x02, 0x07, 0x00, 0x00, // cobid
+            0x01, 0x00, 0x00, 0x00, // length with padding
+            0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // data
         ];
 
         let mut parser = CANFrameMachine::default();
@@ -200,7 +221,5 @@ mod tests {
         assert_eq!(result.can_cobid, 0x702);
         assert_eq!(result.can_len, 1);
         assert_eq!(result.can_data[0], 0x7f);
-        
     }
-
 }

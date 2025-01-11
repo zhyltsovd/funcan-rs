@@ -17,8 +17,8 @@ pub trait MachineTrans<X> {
 
     /// Transitions the state machine to a new state based on the input.
     ///
-    /// This method modifies the machine's current state according to 
-    /// the specified input `x`. The exact details of the transition 
+    /// This method modifies the machine's current state according to
+    /// the specified input `x`. The exact details of the transition
     /// mechanism are determined by the implementer.
     ///
     /// # Parameters
@@ -67,18 +67,20 @@ pub struct Comp<M0, M1> {
 /// Implementation of the `MachineTrans` trait for the composition of two finite state machines, `M0` and `M1`.
 ///
 /// This is applicable when the final values of machine `M0` can be used as inputs to machine `M1`.
-/// 
+///
 /// A common use case is where `M0` processes and decodes some low-level input
 /// to generate higher-level inputs for machine `M1`.
 impl<X, M0, M1> MachineTrans<X> for Comp<M0, M1>
 where
     M0: MachineTrans<X>,
     <M0 as MachineTrans<X>>::Observation: Final,
-    M1: MachineTrans<<<M0 as MachineTrans<X>>::Observation as Final>::FinalValue>
+    M1: MachineTrans<<<M0 as MachineTrans<X>>::Observation as Final>::FinalValue>,
 {
     /// Observable values of the composed machines derived from `M1`.
-    type Observation = <M1 as MachineTrans<<<M0 as MachineTrans<X>>::Observation as Final>::FinalValue>>::Observation;
-    
+    type Observation = <M1 as MachineTrans<
+        <<M0 as MachineTrans<X>>::Observation as Final>::FinalValue,
+    >>::Observation;
+
     /// Processes an input `x` by passing it through machine `M0`.
     ///
     /// If `M0` reaches a final state, its output is utilized as input for machine `M1`.
