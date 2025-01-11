@@ -52,7 +52,7 @@ pub trait Final {
     ///
     /// - `None` if not in a final state.
     /// - `Some(val)` with `val` of type `FinalValue` if in a final state.
-    fn is_final(self: &Self) -> Option<Self::FinalValue>;
+    fn is_final(self: Self) -> Option<Self::FinalValue>;
 }
 
 /// Represents the composition of two finite state machines,
