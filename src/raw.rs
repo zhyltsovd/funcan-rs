@@ -38,6 +38,25 @@ impl Default for CANFrame {
     }
 }
 
+impl CANFrame {   
+    /// Serializes raw CAN frame    
+    pub fn write_to_slice(self: &Self, buffer: &mut [u8]) {
+        assert!(buffer.len() >= 16, "Buffer must be at least 16 bytes long");
+
+        // Write COB-ID as little endian
+        buffer[0..4].copy_from_slice(&self.can_cobid.to_le_bytes());
+
+        // Write length
+        buffer[4] = self.can_len as u8;
+
+        // Fill 3 bytes with zero (padding)
+        buffer[5..8].fill(0);
+
+        // Write CAN data
+        buffer[8..16].copy_from_slice(&self.can_data);
+    }
+}
+
 /// Represents the possible states within a CAN frame processing sequence.
 enum State {
     Init,
@@ -221,5 +240,28 @@ mod tests {
         assert_eq!(result.can_cobid, 0x702);
         assert_eq!(result.can_len, 1);
         assert_eq!(result.can_data[0], 0x7f);
+    }
+
+    #[test]
+    fn test_raw_can_frame_decode_encode() {
+        let frame0: [u8; 16] = [
+            0x02, 0x07, 0x00, 0x00, // cobid
+            0x08, 0x00, 0x00, 0x00, // length with padding
+            0x7f, 0x7e, 0x7d, 0x7c, 0x00, 0x01, 0x02, 0x03, // data
+        ];
+
+        let mut frame1: [u8; 16] = [0; 16];
+            
+        let mut parser = CANFrameMachine::default();
+
+        for x in frame0 {
+            parser.transit(x);
+        }
+
+        let can_frame = parser.observe().is_final().unwrap();
+
+        can_frame.write_to_slice(&mut frame1);
+
+        assert_eq!(frame0, frame1);
     }
 }
