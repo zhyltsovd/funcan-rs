@@ -20,25 +20,25 @@ For further information, questions, or suggestions, feel free to reach out to me
 
 ## TO-DO List
 
-- x Base
-  - x State machine trait
-  - x Raw CAN frames
+- [x] Base
+  - [x] State machine trait
+  - [x] Raw CAN frames
 -   Core CANOpen functionalities
-  -   Network Management 
-    -   Implement NMT master functionalities
-    -   Implement NMT slave functionalities
-  -   Synchronization
-    -   Implement SYNC producer
-    -   Implement SYNC consumer
-  -   SDO transfers
-    -   Define SDO client behavior
-    -   Define SDO server behavior
-    -   Ensure segmented and expedited transfers
-  -   PDO transfers
-    -   Implement static PDO mapping
-    -   Implement dynamic PDO mapping
-    -   Support for asynchronous and synchronous PDOs
-  -   Error handling
-    -   Define error codes according to CANOpen standards
-    -   CAN error management
-    -   Implement emergency messages
+  - [ ] Network Management 
+    - [ ] Implement NMT master functionalities
+    - [ ] Implement NMT slave functionalities
+  - [ ] Synchronization
+    - [ ] Implement SYNC producer
+    - [ ] Implement SYNC consumer
+  - [ ] SDO transfers
+    - [ ] Define SDO client behavior
+    - [ ] Define SDO server behavior
+    - [ ] Ensure segmented and expedited transfers
+  - [ ] PDO transfers
+    - [ ] Implement static PDO mapping
+    - [ ] Implement dynamic PDO mapping
+    - [ ] Support for asynchronous and synchronous PDOs
+  - [ ] Error handling
+    - [ ] Define error codes according to CANOpen standards
+    - [ ] CAN error management
+    - [ ] Implement emergency messages
