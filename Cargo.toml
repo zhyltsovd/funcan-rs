@@ -13,6 +13,7 @@ categories = ["embedded", "hardware-support", "no-std"]
 publish = true
 
 [dependencies]
+futures = {version = "*", default-features = false, features = ["alloc"]}
 
 [profile.release]
 opt-level = 3

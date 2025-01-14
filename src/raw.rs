@@ -2,6 +2,8 @@
 //!
 //! The `raw` module provides an abstract interface for working with raw CAN frames.
 
+use futures::future::BoxFuture;
+
 use crate::machine::*;
 
 /// A structure representing RAW CAN frames.
@@ -27,6 +29,12 @@ pub struct CANFrame {
     /// This is an array of 8 bytes containing the payload of the frame.
     pub can_data: [u8; 8],
 }
+
+pub trait CANInterface {
+    fn recv_frame<'a>(self: &'a mut Self) -> BoxFuture<'a, CANFrame>;
+    fn send_frame<'a>(self: &'a mut Self, frame: CANFrame) -> BoxFuture<'a, ()>;
+}
+
 
 impl Default for CANFrame {
     fn default() -> Self {
