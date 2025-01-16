@@ -3,7 +3,7 @@ use core::ops::Not;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    UnknownTransferType(u8)
+    UnknownClientCommandSpecifier(u8)
 }
 
 
@@ -77,13 +77,26 @@ pub enum ClientCommandSpecifier {
 
 impl Into<u8> for ClientCommandSpecifier {
     fn into(self: Self) -> u8 {
-        ClientCommandSpecifier::InitiateDownload => (1 << 6),
-        ClientCommandSpecifier::DownloadSegment => (0 << 6),
-        ClientCommandSpecifier::InitiateUpload => (2 << 6),
-        ClientCommandSpecifier::UploadSegment => (3 << 6),
-        ClientCommandSpecifier::AbortTransfer => (4 << 6),
+        match self {
+            ClientCommandSpecifier::InitiateDownload => 1 << 5,
+            ClientCommandSpecifier::DownloadSegment => 0 << 5,
+            ClientCommandSpecifier::InitiateUpload => 2 << 5,
+            ClientCommandSpecifier::UploadSegment => 3 << 5,
+            ClientCommandSpecifier::AbortTransfer => 4 << 5,
+        }
     }
 } 
+
+impl TryFrom<u8> for ClientCommandSpecifier {
+    type Error = Error;
+    fn try_from(x: u8) -> Result<Self, Self::Error> {
+        let cs = x & 0xe0;
+        match cs {
+            0 => Ok(ClientCommandSpecifier::DownloadSegment),
+            code => Err(Error::UnknownClientCommandSpecifier(code >> 5))
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerCommandSpecifier {
@@ -95,9 +108,11 @@ pub enum ServerCommandSpecifier {
 
 impl Into<u8> for ServerCommandSpecifier {
     fn into(self: Self) -> u8 {
-        ClientCommandSpecifier::InitiateDownload => (3 << 6),
-        ClientCommandSpecifier::DownloadSegment => (1 << 6),
-        ServerCommandSpecifier::InitiateUpload => (2 << 6),
-        ServerCommandSpecifier::UploadSegment => (0 << 6),
+        match self {
+            ServerCommandSpecifier::InitiateDownload => 3 << 5,
+            ServerCommandSpecifier::DownloadSegment => 1 << 5,
+            ServerCommandSpecifier::InitiateUpload => 2 << 5,
+            ServerCommandSpecifier::UploadSegment => 0 << 5,
+        }
     }
 } 
