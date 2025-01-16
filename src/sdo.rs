@@ -1,4 +1,6 @@
 
+use core::ops::Not;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SDOError {
     UnknownTransferType(u8)
@@ -24,17 +26,43 @@ impl Into<u8> for SDOTransferType {
     }
 }
 
-impl TryFrom<(u8, u8)> for SDOTransferType {
-    type Error = SDOError;
-    
-    fn try_from((n, code): (u8, u8)) -> Result<Self, Self::Error> {
+impl From<u8> for SDOTransferType {
+    fn from(x: u8) -> Self {
+        let code = x & 0x03;
+        
         match code {
-            0x00 => Ok(SDOTransferType::NormalWithNoData),
-            0x01 => Ok(SDOTransferType::Normal),
-            0x02 => Ok(SDOTransferType::ExpeditedWithSize(n)),
-            0x03 => Ok(SDOTransferType::ExpeditedNoSize),
-            ty   => Err(SDOError::UnknownTransferType(ty))
+            0x00 =>  SDOTransferType::NormalWithNoData,
+            0x01 =>  SDOTransferType::Normal,
+            0x02 =>  {
+                let n = (x & 0x0c) >> 2;
+                SDOTransferType::ExpeditedWithSize(n)
+            },
+            0x03 =>  SDOTransferType::ExpeditedNoSize,
+            _   => unreachable!()
         }
     }
-        
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SDOToggleBit(bool);
+
+impl Not for SDOToggleBit {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        SDOToggleBit(!self.0)
+    }
+}
+
+impl Into<u8> for SDOToggleBit {
+    fn into(self: Self) -> u8 {
+        (self.0 as u8) << 7
+    }
+}
+    
+impl From<u8> for SDOToggleBit {
+    fn from(x: u8) -> Self {
+        SDOToggleBit((x & 0x10) > 0x00)
+    }
+}
+
