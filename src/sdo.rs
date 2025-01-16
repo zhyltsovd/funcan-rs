@@ -5,6 +5,7 @@ use crate::dictionary::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
+    UnsupportedTransferType(TransferType),
     UnknownClientCommandSpecifier(u8),
     UnknownServerCommandSpecifier(u8)
 }
@@ -227,4 +228,42 @@ impl Into<[u8; 8]> for ServerResponse {
         req
     }
 
+}
+
+impl TryFrom<[u8; 8]> for ServerResponse {
+    type Error = Error;
+
+    fn try_from(req: [u8; 8]) -> Result<Self, Self::Error> {
+        let code = ServerCommandSpecifier::try_from(req[0])?;
+
+        match code {
+            ServerCommandSpecifier::InitiateUpload => {
+                let ix = Index::read_from_slice(&req[1 .. 4]);
+                let ty = TransferType::from(req[0]);
+                
+                match ty {
+                    TransferType::Normal => {
+                        let n = u32::from_le_bytes(req[4 .. 8].try_into().unwrap());
+                        Ok(ServerResponse::InitMupltipleSegments(ix, n))
+                    },
+                    
+                    TransferType::ExpeditedWithSize(n) => {
+                        let mut data = [0; 4];
+                        data.copy_from_slice(&req[4 .. (8 - n as usize)]);
+                        
+                        Ok(ServerResponse::UploadSingleSegment(ix, data, n))
+                    },
+                    
+                    _ => Err(Error::UnsupportedTransferType(ty))
+                }
+                
+            },
+            
+            ServerCommandSpecifier::UploadSegment => {
+                todo!()
+            },
+
+            _ => todo!()
+        }
+    }
 }
