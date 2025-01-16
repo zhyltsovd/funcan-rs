@@ -34,13 +34,13 @@ impl From<u8> for TransferType {
         let code = x & 0x03;
         
         match code {
-            0x00 =>  TransferType::NormalWithNoData,
-            0x01 =>  TransferType::Normal,
+            0x00 => TransferType::NormalWithNoData,
+            0x01 => TransferType::Normal,
             0x02 =>  {
                 let n = (x & 0x0c) >> 2;
                 TransferType::ExpeditedWithSize(n)
             },
-            0x03 =>  TransferType::ExpeditedNoSize,
+            0x03 => TransferType::ExpeditedNoSize,
             _   => unreachable!()
         }
     }
@@ -160,6 +160,29 @@ impl Into<[u8; 8]> for ClientRequest {
         req
     }
 }
+
+impl TryFrom<[u8; 8]> for ClientRequest {
+    type Error = Error;
+
+    fn try_from(req: [u8; 8]) -> Result<Self, Self::Error> {
+        let code = ClientCommandSpecifier::try_from(req[0])?;
+
+        match code {
+            ClientCommandSpecifier::InitiateUpload => {
+                let ix = Index::read_from_slice(&req[1 .. 4]);
+                Ok(ClientRequest::InitiateUpload(ix))
+            },
+            
+            ClientCommandSpecifier::UploadSegment => {
+                Ok(ClientRequest::UploadSegment)
+            },
+
+            _ => todo!()
+        }
+    }
+}
+
+// ---
 
 pub enum ServerResponse {
     UploadSingleSegment(Index, [u8; 4], u8),
