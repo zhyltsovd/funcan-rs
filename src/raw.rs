@@ -30,11 +30,16 @@ pub struct CANFrame {
     pub can_data: [u8; 8],
 }
 
-pub trait CANInterface {
-    fn recv_frame<'a>(self: &'a mut Self) -> BoxFuture<'a, CANFrame>;
-    fn send_frame<'a>(self: &'a mut Self, frame: CANFrame) -> BoxFuture<'a, ()>;
-}
+pub struct CANInterfaceError;
 
+pub trait CANInterface {
+    fn recv_frame<'a, E>(self: &'a mut Self) -> BoxFuture<'a, Result<CANFrame, E>>
+    where
+        E: From<CANInterfaceError>;
+    fn send_frame<'a, E>(self: &'a mut Self, frame: CANFrame) -> BoxFuture<'a, Result<(), E>>
+    where
+        E: From<CANInterfaceError>;
+}
 
 impl Default for CANFrame {
     fn default() -> Self {
@@ -46,7 +51,7 @@ impl Default for CANFrame {
     }
 }
 
-impl CANFrame {   
+impl CANFrame {
     /// Serializes raw CAN frame    
     pub fn write_to_slice(self: &Self, buffer: &mut [u8]) {
         assert!(buffer.len() >= 16, "Buffer must be at least 16 bytes long");
@@ -259,7 +264,7 @@ mod tests {
         ];
 
         let mut frame1: [u8; 16] = [0; 16];
-            
+
         let mut parser = CANFrameMachine::default();
 
         for x in frame0 {
