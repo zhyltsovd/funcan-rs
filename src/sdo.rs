@@ -59,7 +59,7 @@ impl Not for ToggleBit {
 
 impl Into<u8> for ToggleBit {
     fn into(self: Self) -> u8 {
-        (self.0 as u8) << 7
+        (self.0 as u8) << 4
     }
 }
     
@@ -140,19 +140,68 @@ impl TryFrom<u8> for ServerCommandSpecifier {
 
 pub enum ClientRequest {
     InitiateUpload(Index),
-    UploadSegment(Index)
+    UploadSegment
 }
 
 impl Into<[u8; 8]> for ClientRequest {
     fn into(self: Self) -> [u8; 8] {
-        let req = [0; 8];
+        let mut req = [0; 8];
 
-        todo!()
+        match self {
+            ClientRequest::InitiateUpload(ix) => {            
+                req[0] = ClientCommandSpecifier::InitiateUpload.into();
+                ix.write_to_slice(&mut req[1 .. 4]);
+            },
+            ClientRequest::UploadSegment => {
+                req[0] = ClientCommandSpecifier::UploadSegment.into();
+            },            
+        };
+
+        req
     }
 }
 
 pub enum ServerResponse {
-    InitiateUpload(Index),
-    UploadSingleSegment(Index, [u8; 4]),
-    UploadMupltipleSegments(Index, ToggleBit),
+    UploadSingleSegment(Index, [u8; 4], u8),
+    InitMupltipleSegments(Index, u32),
+    UploadMupltipleSegments(ToggleBit, [u8; 7], u8, bool),
+}
+
+impl Into<[u8; 8]> for ServerResponse {
+    fn into(self: Self) -> [u8; 8] {
+        let mut req = [0; 8];
+
+        match self {
+            ServerResponse::UploadSingleSegment(ix, data, len) => {            
+                let cs: u8 = ServerCommandSpecifier::InitiateUpload.into();
+                let ty: u8 = TransferType::ExpeditedWithSize(0x3 & len).into();
+                
+                let code = cs | ty | ((0x3 & len) << 2);
+                req[0] = code;
+                ix.write_to_slice(&mut req[1 .. 4]);
+                req[4 .. 8].copy_from_slice(&data);
+            },
+            
+            ServerResponse::InitMupltipleSegments(ix, len) => {
+                let cs: u8 = ServerCommandSpecifier::InitiateUpload.into();
+                let ty: u8 = TransferType::Normal.into();
+                
+                let code = cs | ty;
+                req[0] = code;
+                ix.write_to_slice(&mut req[1 .. 4]);
+                req[4 .. 8].copy_from_slice(&len.to_le_bytes());
+            }
+            
+            ServerResponse::UploadMupltipleSegments(tb, data, len, is_end) => {
+                let cs: u8 = ServerCommandSpecifier::UploadSegment.into();
+                let t: u8 = tb.into(); 
+                let code = cs | ((0x3 & len) << 1) | (is_end as u8) | t;
+                req[0] = code;
+                req[1 .. 8].copy_from_slice(&data);
+            }
+        };
+
+        req
+    }
+
 }
