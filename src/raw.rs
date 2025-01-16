@@ -6,6 +6,8 @@ use futures::future::BoxFuture;
 
 use crate::machine::*;
 
+use core::fmt;
+
 /// A structure representing RAW CAN frames.
 ///
 /// # Fields
@@ -14,7 +16,7 @@ use crate::machine::*;
 /// * `can_len` - The length of the CAN frame. Number of valid bytes in `can_data`
 /// * `can_data` - The data of the CAN frame. This is an array of 8 bytes containing the payload of the frame.
 ///
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct CANFrame {
     /// The CAN identifier (COB-ID) of the frame.
     ///
@@ -28,6 +30,20 @@ pub struct CANFrame {
     ///
     /// This is an array of 8 bytes containing the payload of the frame.
     pub can_data: [u8; 8],
+}
+
+impl fmt::Debug for CANFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:#X}: [", self.can_cobid)?;
+        for i in 0..self.can_len {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:02X}", self.can_data[i])?;
+        }
+
+        Ok(())
+    }
 }
 
 pub trait CANInterface {
