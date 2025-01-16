@@ -30,15 +30,11 @@ pub struct CANFrame {
     pub can_data: [u8; 8],
 }
 
-pub struct CANInterfaceError;
-
 pub trait CANInterface {
-    fn recv_frame<'a, E>(self: &'a mut Self) -> BoxFuture<'a, Result<CANFrame, E>>
-    where
-        E: From<CANInterfaceError>;
-    fn send_frame<'a, E>(self: &'a mut Self, frame: CANFrame) -> BoxFuture<'a, Result<(), E>>
-    where
-        E: From<CANInterfaceError>;
+    type Error;
+
+    fn recv_frame<'a, E>(self: &'a mut Self) -> BoxFuture<'a, Result<CANFrame, Error>>;
+    fn send_frame<'a, E>(self: &'a mut Self, frame: CANFrame) -> BoxFuture<'a, Result<(), Error>>;
 }
 
 impl Default for CANFrame {
