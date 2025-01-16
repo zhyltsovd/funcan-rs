@@ -92,7 +92,11 @@ impl TryFrom<u8> for ClientCommandSpecifier {
     fn try_from(x: u8) -> Result<Self, Self::Error> {
         let cs = x & 0xe0;
         match cs {
-            0 => Ok(ClientCommandSpecifier::DownloadSegment),
+            0x00 => Ok(ClientCommandSpecifier::DownloadSegment),
+            0x20 => Ok(ClientCommandSpecifier::InitiateDownload),
+            0x40 => Ok(ClientCommandSpecifier::InitiateUpload),
+            0x50 => Ok(ClientCommandSpecifier::UploadSegment),
+            0x80 => Ok(ClientCommandSpecifier::AbortTransfer),
             code => Err(Error::UnknownClientCommandSpecifier(code >> 5))
         }
     }
