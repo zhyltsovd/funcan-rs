@@ -46,11 +46,39 @@ impl fmt::Debug for CANFrame {
     }
 }
 
+/// A trait for abstracting a CAN (Controller Area Network) interface.
+///
+/// This trait defines the basic operations for receiving and sending CAN frames, which
+/// are utilized in various embedded and automotive systems for communication over a CAN bus.
 pub trait CANInterface {
+    /// The error type returned by the CAN interface operations.
+    ///
+    /// This associated type allows different implementations of `CANInterface` to specify
+    /// their own error handling mechanisms.
     type Error;
 
-    fn recv_frame<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANFrame, Self::Error>>;
-    fn send_frame<'a>(
+    /// Asynchronously receive a CAN frame from the interface.
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` that resolves to a `Result` containing the received `CANFrame` on success,
+    /// or an error of type `Self::Error` if the operation fails.
+    ///
+     fn recv_frame<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANFrame, Self::Error>>;
+
+    /// Asynchronously send a CAN frame to the interface.
+    ///
+    /// # Parameters
+    ///
+    /// - `frame`: The `CANFrame` to be sent over the CAN network.
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` that resolves to a `Result` indicating the success or failure of the
+    /// send operation. Returns `Ok(())` if the frame was sent successfully, or an error of
+    /// type `Self::Error` if the operation fails.
+    ///
+     fn send_frame<'a>(
         self: &'a mut Self,
         frame: CANFrame,
     ) -> BoxFuture<'a, Result<(), Self::Error>>;
