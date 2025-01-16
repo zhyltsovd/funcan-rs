@@ -1,9 +1,12 @@
 
 use core::ops::Not;
 
+use crate::dictionary::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    UnknownClientCommandSpecifier(u8)
+    UnknownClientCommandSpecifier(u8),
+    UnknownServerCommandSpecifier(u8)
 }
 
 
@@ -120,3 +123,36 @@ impl Into<u8> for ServerCommandSpecifier {
         }
     }
 } 
+
+impl TryFrom<u8> for ServerCommandSpecifier {
+    type Error = Error;
+    fn try_from(x: u8) -> Result<Self, Self::Error> {
+        let cs = x & 0xe0;
+        match cs {
+            0x00 => Ok(ServerCommandSpecifier::UploadSegment),
+            0x20 => Ok(ServerCommandSpecifier::DownloadSegment),
+            0x40 => Ok(ServerCommandSpecifier::InitiateUpload),
+            0x50 => Ok(ServerCommandSpecifier::InitiateDownload),
+            code => Err(Error::UnknownServerCommandSpecifier(code >> 5))
+        }
+    }
+}
+
+pub enum ClientRequest {
+    InitiateUpload(Index),
+    UploadSegment(Index)
+}
+
+impl Into<[u8; 8]> for ClientRequest {
+    fn into(self: Self) -> [u8; 8] {
+        let req = [0; 8];
+
+        todo!()
+    }
+}
+
+pub enum ServerResponse {
+    InitiateUpload(Index),
+    UploadSingleSegment(Index, [u8; 4]),
+    UploadMupltipleSegments(Index, ToggleBit),
+}

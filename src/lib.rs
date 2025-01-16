@@ -7,3 +7,5 @@ pub mod machine;
 pub mod raw;
 /// Common SDO types and functions
 pub mod sdo;
+/// CAN Open dictionary
+pub mod dictionary;
