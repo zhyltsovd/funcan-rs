@@ -40,9 +40,9 @@ impl fmt::Debug for CANFrame {
                 write!(f, ", ")?;
             }
             write!(f, "{:02X}", self.can_data[i])?;
-        }
-
-        Ok(())
+        };
+        
+        write!(f, "]")
     }
 }
 
