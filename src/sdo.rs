@@ -169,6 +169,11 @@ impl Into<[u8; 8]> for ClientRequest {
                 ix.write_to_slice(&mut req[1 .. 4]);
             },
 
+            ClientRequest::DownloadSegment(t, n, data) => {
+                req[0] = ClientCommandSpecifier::DownloadSegment.into();
+            
+            }
+
             
         };
 
