@@ -68,3 +68,22 @@ impl TryFrom<u16> for EmergencyClass {
         }
     }
 }
+
+
+/*
+
+8100 h Communication – generic
+8110 h CAN overrun (objects lost)
+8120 h CAN in error passive mode
+8130 h Life guard error or heartbeat error
+8140 h recovered from bus off
+8150 h CAN-ID collision
+
+8200 h Protocol error - generic
+8210 h PDO not processed due to length error
+8220 h PDO length exceeded
+8230 h DAM MPDO not processed, destination object not available
+8240 h Unexpected SYNC data length
+8250 h RPDO timeout
+
+*/
