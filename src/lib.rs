@@ -9,3 +9,6 @@ pub mod raw;
 pub mod sdo;
 /// CAN Open dictionary
 pub mod dictionary;
+/// Emergency types and functions
+pub mod emcy;
+
