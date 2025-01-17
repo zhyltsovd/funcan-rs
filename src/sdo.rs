@@ -1,3 +1,4 @@
+pub mod machines; 
 
 use core::ops::Not;
 
