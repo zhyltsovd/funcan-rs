@@ -1,4 +1,5 @@
 pub mod machines; 
+pub mod abort; 
 
 use core::ops::Not;
 
@@ -6,7 +7,7 @@ use crate::dictionary::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
-    UnsupportedTransferType(TransferType),
+    UnsupportedTransferType(u8),
     UnknownClientCommandSpecifier(u8),
     UnknownServerCommandSpecifier(u8)
 }
@@ -14,36 +15,31 @@ pub enum Error {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransferType {
-    NormalWithNoData,
     Normal,
     ExpeditedWithSize(u8),
-    ExpeditedNoSize
 }
 
 impl Into<u8> for TransferType {
     fn into(self: Self) -> u8 {
         match self {
-            TransferType::NormalWithNoData => 0x00,
             TransferType::Normal => 0x01,
-            TransferType::ExpeditedWithSize(_) => 0x02,
-            TransferType::ExpeditedNoSize => 0x03,
+            TransferType::ExpeditedWithSize(n) => 0x02 | (n << 2),
         }
     }
 }
 
-impl From<u8> for TransferType {
-    fn from(x: u8) -> Self {
+impl TryFrom<u8> for TransferType {
+    type Error = Error;
+    fn try_from(x: u8) -> Result<Self, Self::Error> {
         let code = x & 0x03;
         
         match code {
-            0x00 => TransferType::NormalWithNoData,
-            0x01 => TransferType::Normal,
+            0x01 => Ok(TransferType::Normal),
             0x02 =>  {
                 let n = (x & 0x0c) >> 2;
-                TransferType::ExpeditedWithSize(n)
+                Ok(TransferType::ExpeditedWithSize(n))
             },
-            0x03 => TransferType::ExpeditedNoSize,
-            _   => unreachable!()
+            t => Err(Error::UnsupportedTransferType(t)),
         }
     }
 }
@@ -142,7 +138,11 @@ impl TryFrom<u8> for ServerCommandSpecifier {
 
 pub enum ClientRequest {
     InitiateUpload(Index),
-    UploadSegment
+    UploadSegment,
+    InitiateSingleSegmentDownload(Index, [u8; 4], u8),
+    InitiateMultipleSegmentDownload(Index, u32),
+    DownloadSegment(ToggleBit, u8, [u8; 7]),
+    AbortTransfer // Error
 }
 
 impl Into<[u8; 8]> for ClientRequest {
@@ -154,9 +154,22 @@ impl Into<[u8; 8]> for ClientRequest {
                 req[0] = ClientCommandSpecifier::InitiateUpload.into();
                 ix.write_to_slice(&mut req[1 .. 4]);
             },
+            
             ClientRequest::UploadSegment => {
                 req[0] = ClientCommandSpecifier::UploadSegment.into();
-            },            
+            },
+            
+            ClientRequest::InitiateSingleSegmentDownload(ix, data, len) => {
+                req[0] = ClientCommandSpecifier::InitiateDownload.into();
+                ix.write_to_slice(&mut req[1 .. 4]);
+            },
+
+            ClientRequest::InitiateMultipleSegmentDownload(ix, len) => {
+                req[0] = ClientCommandSpecifier::InitiateDownload.into();
+                ix.write_to_slice(&mut req[1 .. 4]);
+            },
+
+            
         };
 
         req
@@ -190,6 +203,8 @@ pub enum ServerResponse {
     UploadSingleSegment(Index, [u8; 4], u8),
     InitMupltipleSegments(Index, u32),
     UploadMupltipleSegments(ToggleBit, [u8; 7], u8, bool),
+    DownloadSingleSegmentAck(Index),
+    DownloadSegmentAck(ToggleBit, u8)
 }
 
 impl Into<[u8; 8]> for ServerResponse {
@@ -240,7 +255,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
         match code {
             ServerCommandSpecifier::InitiateUpload => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
-                let ty = TransferType::from(req[0]);
+                let ty = TransferType::try_from(req[0])?;
                 
                 match ty {
                     TransferType::Normal => {
@@ -253,11 +268,8 @@ impl TryFrom<[u8; 8]> for ServerResponse {
                         data.copy_from_slice(&req[4 .. (8 - n as usize)]);
                         
                         Ok(ServerResponse::UploadSingleSegment(ix, data, n))
-                    },
-                    
-                    _ => Err(Error::UnsupportedTransferType(ty))
+                    },   
                 }
-                
             },
             
             ServerCommandSpecifier::UploadSegment => {
