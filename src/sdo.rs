@@ -225,13 +225,14 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 
             ClientCommandSpecifier::DownloadSegment => {
                 let toggle_bit = ToggleBit::from(req[0]);
+                let end = req[0] & 0x01 > 0;
                 let n = (req[0] >> 1) & 0x07; // Extract n assuming it's 3 bits
                 let data = [req[1], req[2], req[3], req[4], req[5], req[6], req[7]];
-                Ok(ClientRequest::DownloadSegment(toggle_bit, n, data))
+                Ok(ClientRequest::DownloadSegment(toggle_bit, end, n, data))
             }
 
             ClientCommandSpecifier::AbortTransfer => {
-                let code = AbortCode::from_le_bytes([req[4], req[5], req[6], req[7]]);
+                let code = (u32::from_le_bytes([req[4], req[5], req[6], req[7]])).into();
                 Ok(ClientRequest::AbortTransfer(code))
             },
             
