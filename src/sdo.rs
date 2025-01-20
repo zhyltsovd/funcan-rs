@@ -4,6 +4,7 @@ pub mod abort;
 use core::ops::Not;
 
 use crate::dictionary::*;
+use crate::sdo::abort::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -142,7 +143,7 @@ pub enum ClientRequest {
     InitiateSingleSegmentDownload(Index, [u8; 4], u8),
     InitiateMultipleSegmentDownload(Index, u32),
     DownloadSegment(ToggleBit, u8, [u8; 7]),
-    AbortTransfer // Error
+    AbortTransfer(AbortCode) // Error
 }
 
 impl Into<[u8; 8]> for ClientRequest {
@@ -171,9 +172,14 @@ impl Into<[u8; 8]> for ClientRequest {
 
             ClientRequest::DownloadSegment(t, n, data) => {
                 req[0] = ClientCommandSpecifier::DownloadSegment.into();
-            
+                todo!()
             }
 
+            ClientRequest::AbortTransfer(code) => {
+                req[0] = ClientCommandSpecifier::AbortTransfer.into();
+                todo!()
+            }
+            
             
         };
 
