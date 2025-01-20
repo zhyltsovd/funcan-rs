@@ -2,6 +2,7 @@
 use crate::sdo::*;
 use crate::machine::*;
 
+/*
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -221,3 +222,5 @@ Some(ClientOutput::Output(ClientRequest::InitiateSingleSegmentDownload(*ix, [0;4
         }
     }
 }
+
+*/
