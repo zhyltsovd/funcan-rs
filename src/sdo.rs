@@ -236,12 +236,9 @@ impl TryFrom<[u8; 8]> for ClientRequest {
                 Ok(ClientRequest::AbortTransfer(code))
             },
             
-            _ => todo!()
         }
     }
 }
-
-// ---
 
 pub enum ServerResponse {
     UploadSingleSegment(Index, [u8; 4], u8),
@@ -284,8 +281,31 @@ impl Into<[u8; 8]> for ServerResponse {
                 req[1 .. 8].copy_from_slice(&data);
             }
 
-
-
+            ServerResponse::DownloadSingleSegmentAck(ix) => {
+                let cs: u8 = ServerCommandSpecifier::InitiateDownload.into(); // ?
+                
+                // Set the command specifier for single segment download acknowledgment
+                req[0] = cs;
+                ix.write_to_slice(&mut req[1 .. 4]);
+                
+                // The remaining bytes can be set to zero or used for additional flags if necessary
+                req[4..8].copy_from_slice(&[0, 0, 0, 0]);
+            },
+            
+            ServerResponse::DownloadSegmentAck(toggle_bit, len) => {
+                let cs: u8 = ServerCommandSpecifier::DownloadSegment.into();
+                let t: u8 = toggle_bit.into();
+                
+                // Command specifier includes the toggle bit
+                let code = cs | t;
+                req[0] = code;
+                
+                // The second byte can represent the number of bytes not used in the last segment (or other flags)
+                req[1] = len;
+                
+                // The remaining bytes can be set to zero or used for additional flags if necessary
+                req[2..8].copy_from_slice(&[0, 0, 0, 0, 0, 0]);
+            }            
 
 
             
