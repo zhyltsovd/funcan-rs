@@ -1,5 +1,6 @@
 
 #[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortCode {
     ToggleBitNotAlternated = 0x05030000,
     SDOProtocolTimedOut = 0x05040000,
