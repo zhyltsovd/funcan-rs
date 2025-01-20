@@ -140,11 +140,12 @@ impl TryFrom<u8> for ServerCommandSpecifier {
 pub enum ClientRequest {
     InitiateUpload(Index),
     UploadSegment,
-    InitiateSingleSegmentDownload(Index, [u8; 4], u8),
-    InitiateMultipleSegmentDownload(Index, u32),
-    DownloadSegment(ToggleBit, u8, [u8; 7]),
-    AbortTransfer(AbortCode) // Error
+    InitiateSingleSegmentDownload(Index, [u8; 4], u8), // index, length, data
+    InitiateMultipleSegmentDownload(Index, u32), // index and length,
+    DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
+    AbortTransfer(AbortCode) 
 }
+
 
 impl Into<[u8; 8]> for ClientRequest {
     fn into(self: Self) -> [u8; 8] {
@@ -163,24 +164,28 @@ impl Into<[u8; 8]> for ClientRequest {
             ClientRequest::InitiateSingleSegmentDownload(ix, data, len) => {
                 req[0] = ClientCommandSpecifier::InitiateDownload.into();
                 ix.write_to_slice(&mut req[1 .. 4]);
+                req[4] = len; // Set the length
+                req[5..8].copy_from_slice(&data[0..3]); // Set the first 3 bytes of data
+                // Note: data[3] is not used due to byte constraints
             },
 
             ClientRequest::InitiateMultipleSegmentDownload(ix, len) => {
                 req[0] = ClientCommandSpecifier::InitiateDownload.into();
                 ix.write_to_slice(&mut req[1 .. 4]);
+                req[4..8].copy_from_slice(&len.to_le_bytes()); // Set length as u32 in little endian
             },
 
-            ClientRequest::DownloadSegment(t, n, data) => {
-                req[0] = ClientCommandSpecifier::DownloadSegment.into();
-                todo!()
+            ClientRequest::DownloadSegment(t, c, n, data) => {
+                let code: u8 = ClientCommandSpecifier::DownloadSegment.into();
+                let toogle: u8 = t.into();
+                req[0] = code | toogle | ((n & 0x07) << 1) | (c as u8); 
+                req[1..8].copy_from_slice(&data[..7]);
             }
 
             ClientRequest::AbortTransfer(code) => {
                 req[0] = ClientCommandSpecifier::AbortTransfer.into();
-                todo!()
+                req[4..8].copy_from_slice(&(code as u32).to_le_bytes()); // Set abort code as u32 in little endian
             }
-            
-            
         };
 
         req
@@ -203,6 +208,33 @@ impl TryFrom<[u8; 8]> for ClientRequest {
                 Ok(ClientRequest::UploadSegment)
             },
 
+            ClientCommandSpecifier::InitiateDownload => {
+                let ix = Index::read_from_slice(&req[1 .. 4]);
+                // Determine if it's a single or multiple segment download based on the length bytes
+                // Here, we'll check if the upper bytes are zero to classify as single segment
+                if req[5..8] == [0, 0, 0] {
+                    let len = req[4];
+                    let mut data = [0u8;4];
+                    data[..3].copy_from_slice(&req[5..8]);
+                    Ok(ClientRequest::InitiateSingleSegmentDownload(ix, data, len))
+                } else {
+                    let len = u32::from_le_bytes([req[4], req[5], req[6], req[7]]);
+                    Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, len))
+                }
+            },
+
+            ClientCommandSpecifier::DownloadSegment => {
+                let toggle_bit = ToggleBit::from(req[0]);
+                let n = (req[0] >> 1) & 0x07; // Extract n assuming it's 3 bits
+                let data = [req[1], req[2], req[3], req[4], req[5], req[6], req[7]];
+                Ok(ClientRequest::DownloadSegment(toggle_bit, n, data))
+            }
+
+            ClientCommandSpecifier::AbortTransfer => {
+                let code = AbortCode::from_le_bytes([req[4], req[5], req[6], req[7]]);
+                Ok(ClientRequest::AbortTransfer(code))
+            },
+            
             _ => todo!()
         }
     }
@@ -250,6 +282,12 @@ impl Into<[u8; 8]> for ServerResponse {
                 req[0] = code;
                 req[1 .. 8].copy_from_slice(&data);
             }
+
+
+
+
+
+            
         };
 
         req
