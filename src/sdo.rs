@@ -137,10 +137,11 @@ impl TryFrom<u8> for ServerCommandSpecifier {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum ClientRequest {
     InitiateUpload(Index),
     UploadSegment,
-    InitiateSingleSegmentDownload(Index, [u8; 4], u8), // index, length, data
+    InitiateSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
     InitiateMultipleSegmentDownload(Index, u32), // index and length,
     DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
     AbortTransfer(AbortCode) 
@@ -161,16 +162,37 @@ impl Into<[u8; 8]> for ClientRequest {
                 req[0] = ClientCommandSpecifier::UploadSegment.into();
             },
             
-            ClientRequest::InitiateSingleSegmentDownload(ix, data, len) => {
+            ClientRequest::InitiateSingleSegmentDownload(ix, len, data) => {
                 req[0] = ClientCommandSpecifier::InitiateDownload.into();
+                //len is n field in first byte, represented 4-len value (len must be from 0 to 4, other is mistake)
+                let len = if len <= 4 {
+                    4 - len
+                }else{
+                    //TODO: как-то обработать ситуацию, когда len > 4. Возможно ли это?
+                    panic!("Requested single segment download length out of range!");
+                };
+
+                req[0] |= len << 2;
+
+                //Single segment download meant expedited download, so we must set e bit
+                req[0] |= 1 << 1;
+                //Besides we specify size, so s bit must be set too
+                req[0] |= 1 << 0;
+
                 ix.write_to_slice(&mut req[1 .. 4]);
-                req[4] = len; // Set the length
-                req[5..8].copy_from_slice(&data[0..3]); // Set the first 3 bytes of data
+
+                req[4..8].copy_from_slice(&data[0..4]); // Set the first 4 bytes of data
                 // Note: data[3] is not used due to byte constraints
             },
 
             ClientRequest::InitiateMultipleSegmentDownload(ix, len) => {
                 req[0] = ClientCommandSpecifier::InitiateDownload.into();
+
+                //setup sized bit if we specify len
+                if len > 0 {
+                    req[0] |= 1 << 0;
+                }
+
                 ix.write_to_slice(&mut req[1 .. 4]);
                 req[4..8].copy_from_slice(&len.to_le_bytes()); // Set length as u32 in little endian
             },
@@ -210,16 +232,32 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 
             ClientCommandSpecifier::InitiateDownload => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
-                // Determine if it's a single or multiple segment download based on the length bytes
-                // Here, we'll check if the upper bytes are zero to classify as single segment
-                if req[5..8] == [0, 0, 0] {
-                    let len = req[4];
-                    let mut data = [0u8;4];
-                    data[..3].copy_from_slice(&req[5..8]);
-                    Ok(ClientRequest::InitiateSingleSegmentDownload(ix, data, len))
-                } else {
-                    let len = u32::from_le_bytes([req[4], req[5], req[6], req[7]]);
-                    Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, len))
+                // Determine if it's a single or multiple segment download based on s and e bits in first byte
+                let is_expedited = (req[0] >> 1 ) & 1 > 0;
+                let is_sized = (req[0] >> 0 ) & 1 > 0;
+
+                match (is_expedited, is_sized) {
+                    (false, false) => {
+                        //Unspecified len download request
+                        Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, 0))
+                    },
+                    (false, true) => {
+                        let len = u32::from_le_bytes([req[4], req[5], req[6], req[7]]);
+                        Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, len))
+                    },
+                    (true, true) => {
+                        //Expedited download request
+                        let len= 4 - (( req[0] >> 2 ) & 0x3);
+                        let mut data = [0u8;4];
+                        data[..4].copy_from_slice(&req[4..8]);
+                        Ok(ClientRequest::InitiateSingleSegmentDownload(ix, len, data))
+                    },
+                    (true, false) => {
+                        //Expedited, but len not specified. Not sure is this used in real and have any meaning
+                        let mut data = [0u8;4];
+                        data[..3].copy_from_slice(&req[4..8]);
+                        Ok(ClientRequest::InitiateSingleSegmentDownload(ix, 0, data))
+                    }
                 }
             },
 
@@ -241,7 +279,7 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 }
 
 pub enum ServerResponse {
-    UploadSingleSegment(Index, [u8; 4], u8),
+    UploadSingleSegment( Index, u8, [u8; 4] ),
     InitMupltipleSegments(Index, u32),
     UploadMupltipleSegments(ToggleBit, [u8; 7], u8, bool),
     DownloadSingleSegmentAck(Index),
@@ -253,7 +291,7 @@ impl Into<[u8; 8]> for ServerResponse {
         let mut req = [0; 8];
 
         match self {
-            ServerResponse::UploadSingleSegment(ix, data, len) => {            
+            ServerResponse::UploadSingleSegment(ix, len, data) => {
                 let cs: u8 = ServerCommandSpecifier::InitiateUpload.into();
                 let ty: u8 = TransferType::ExpeditedWithSize(0x3 & len).into();
                 
@@ -337,7 +375,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
                         let mut data = [0; 4];
                         data.copy_from_slice(&req[4 .. (8 - n as usize)]);
                         
-                        Ok(ServerResponse::UploadSingleSegment(ix, data, n))
+                        Ok(ServerResponse::UploadSingleSegment(ix, n, data))
                     },   
                 }
             },
@@ -348,5 +386,79 @@ impl TryFrom<[u8; 8]> for ServerResponse {
 
             _ => todo!()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdo::ClientRequest;
+    use crate::sdo;
+
+    #[test]
+    fn client_upload_init() {
+        let req = ClientRequest::InitiateUpload(Index::new(0x1000, 0x01));
+        let req_buf: [u8; 8] = req.clone().into();
+
+        //CiA301 7.2.4.3.6 - SDO upload initiate
+        let expected_buf: [u8; 8] = [ 0x40, 0x00, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00 ];
+
+        assert_eq!(req_buf, expected_buf);
+
+        let req_dec = ClientRequest::try_from( req_buf ).unwrap();
+
+        assert_eq!( req, req_dec );
+    }
+
+    #[test]
+    fn client_download_single_init() {
+        let index = Index::new(0x1000, 0x01);
+
+        let req = ClientRequest::InitiateSingleSegmentDownload( index, 4, [0x01, 0x02, 0x03, 0x04] );
+
+        let req_buf: [u8; 8] = req.clone().into();
+
+        //CiA301 7.2.4.3.3 - SDO download initiate, e = 1, s = 1
+        let expected_buf: [u8; 8] = [ 0x23, 0x00, 0x10, 0x01, 0x01, 0x02, 0x03, 0x04 ];
+
+        assert_eq!(req_buf, expected_buf);
+
+        let req_dec = ClientRequest::try_from( req_buf ).unwrap();
+
+        assert_eq!( req, req_dec );
+    }
+
+    #[test]
+    fn client_download_segment_init() {
+        let index = Index::new(0x1000, 0x01);
+        let req = ClientRequest::InitiateMultipleSegmentDownload( index, 10 );
+
+        let req_buf: [u8; 8] = req.clone().into();
+
+        //CiA301 7.2.4.3.3 - SDO download initiate, e = 0, s = 1
+        let expected_buf: [u8; 8] = [ 0x21, 0x00, 0x10, 0x01, 0x0A, 0x00, 0x00, 0x00 ];
+
+        assert_eq!(req_buf, expected_buf);
+
+        let req_dec = ClientRequest::try_from( req_buf ).unwrap();
+
+        assert_eq!( req, req_dec );
+    }
+
+    #[test]
+    fn client_download_segment_unspecified_len() {
+        let index = Index::new(0x1000, 0x01);
+        let req = ClientRequest::InitiateMultipleSegmentDownload( index, 0 );
+
+        let req_buf: [u8; 8] = req.clone().into();
+
+        //CiA301 7.2.4.3.3 - SDO download initiate, e = 0, s = 1
+        let expected_buf: [u8; 8] = [ 0x20, 0x00, 0x10, 0x01, 0x00, 0x00, 0x00, 0x00 ];
+
+        assert_eq!(req_buf, expected_buf);
+
+        let req_dec = ClientRequest::try_from( req_buf ).unwrap();
+
+        assert_eq!( req, req_dec );
     }
 }

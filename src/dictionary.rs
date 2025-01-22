@@ -5,6 +5,12 @@ pub struct Index {
 }
 
 impl Index {
+    pub fn new( index: u16, sub: u8 ) -> Self{
+        Index{
+            index,
+            sub
+        }
+    }
     /// Writes the Index to a mutable byte slice.
     ///
     /// # Panics
