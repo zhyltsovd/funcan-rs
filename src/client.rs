@@ -37,7 +37,7 @@ impl<C: CANInterface> ClientCtx<C>
         }
     }
     
-    async fn run<E>(mut self: Self) -> Result<(), E>
+    pub async fn run<E>(mut self: Self) -> Result<(), E>
     where
         E: From<<C as CANInterface>::Error>
     {
