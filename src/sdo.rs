@@ -25,7 +25,7 @@ impl Into<u8> for TransferType {
     fn into(self: Self) -> u8 {
         match self {
             TransferType::Normal => 0x01,
-            TransferType::ExpeditedWithSize(n) => (0x03 | ((4-n) << 2)),
+            TransferType::ExpeditedWithSize(n)  => 0x03 | ((4-n) << 2),
             TransferType::NormalUnspecifiedSize => 0x00
         }
     }
@@ -405,8 +405,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
                         Ok(ServerResponse::UploadSingleSegment(ix, n, data))
                     },
                     TransferType::NormalUnspecifiedSize => {
-                        let mut data = [0; 4];
-                        Ok(ServerResponse::InitMupltipleSegments(ix,0))
+                        Ok(ServerResponse::InitMupltipleSegments(ix, 0))
                     },
                 }
             },
@@ -429,8 +428,6 @@ impl TryFrom<[u8; 8]> for ServerResponse {
             ServerCommandSpecifier::DownloadSegmentAck => {
                 Ok(ServerResponse::DownloadSegmentAck(req[0].into()))
             },
-
-            _ => todo!()
         }
     }
 }
@@ -490,7 +487,6 @@ mod tests {
 
     #[test]
     fn client_download_last_segment(){
-        let index = Index::new( 0x1000, 0x01 );
         let req = ClientRequest::DownloadSegment(ToggleBit(true), true, 7, [1,2,3,4,5,6,7]);
 
         let req_buf: [u8; 8] = req.clone().into();
@@ -505,7 +501,6 @@ mod tests {
 
     #[test]
     fn client_download_intermidiate_segment(){
-        let index = Index::new( 0x1000, 0x01 );
         let req = ClientRequest::DownloadSegment(ToggleBit(false), false, 3, [1,2,3,4,5,6,7]);
 
         let req_buf: [u8; 8] = req.clone().into();
@@ -612,7 +607,6 @@ mod tests {
 
     #[test]
     fn server_resp_upload_last_segment(){
-        let index = Index::new( 0x1000, 0x01 );
         let resp = ServerResponse::UploadMupltipleSegments(ToggleBit(true), true, 5, [1, 2, 3, 4, 5, 6, 7]);
 
         let resp_buf:[u8; 8] = resp.clone().into();
@@ -626,7 +620,6 @@ mod tests {
 
     #[test]
     fn server_resp_upload_intermidiate_segment(){
-        let index = Index::new( 0x1000, 0x01 );
         let resp = ServerResponse::UploadMupltipleSegments(ToggleBit(false), false, 7, [1, 2, 3, 4, 5, 6, 7]);
 
         let resp_buf:[u8; 8] = resp.clone().into();
@@ -654,7 +647,6 @@ mod tests {
 
     #[test]
     fn server_resp_download_segment_ack(){
-        let index = Index::new( 0x1000, 0x01 );
         let resp = ServerResponse::DownloadSegmentAck(ToggleBit(true));
 
         let resp_buf:[u8; 8] = resp.clone().into();
