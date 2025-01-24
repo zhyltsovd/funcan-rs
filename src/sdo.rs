@@ -80,9 +80,9 @@ impl From<u8> for ToggleBit {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientCommandSpecifier {
-    InitiateDownload,
+    InitDownload,
     DownloadSegment,
-    InitiateUpload,
+    InitUpload,
     UploadSegment,
     AbortTransfer,
 }
@@ -90,9 +90,9 @@ pub enum ClientCommandSpecifier {
 impl Into<u8> for ClientCommandSpecifier {
     fn into(self: Self) -> u8 {
         match self {
-            ClientCommandSpecifier::InitiateDownload => 1 << 5,
+            ClientCommandSpecifier::InitDownload => 1 << 5,
             ClientCommandSpecifier::DownloadSegment => 0 << 5,
-            ClientCommandSpecifier::InitiateUpload => 2 << 5,
+            ClientCommandSpecifier::InitUpload => 2 << 5,
             ClientCommandSpecifier::UploadSegment => 3 << 5,
             ClientCommandSpecifier::AbortTransfer => 4 << 5,
         }
@@ -105,8 +105,8 @@ impl TryFrom<u8> for ClientCommandSpecifier {
         let cs = x & 0xe0;
         match cs {
             0x00 => Ok(ClientCommandSpecifier::DownloadSegment),
-            0x20 => Ok(ClientCommandSpecifier::InitiateDownload),
-            0x40 => Ok(ClientCommandSpecifier::InitiateUpload),
+            0x20 => Ok(ClientCommandSpecifier::InitDownload),
+            0x40 => Ok(ClientCommandSpecifier::InitUpload),
             0x60 => Ok(ClientCommandSpecifier::UploadSegment),
             0x80 => Ok(ClientCommandSpecifier::AbortTransfer),
             code => Err(Error::UnknownClientCommandSpecifier(code >> 5))
@@ -116,18 +116,18 @@ impl TryFrom<u8> for ClientCommandSpecifier {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerCommandSpecifier {
-    InitiateDownloadAck,
+    InitDownloadAck,
     DownloadSegmentAck,
-    InitiateUpload,
+    InitUpload,
     UploadSegment
 }
 
 impl Into<u8> for ServerCommandSpecifier {
     fn into(self: Self) -> u8 {
         match self {
-            ServerCommandSpecifier::InitiateDownloadAck => 3 << 5,
+            ServerCommandSpecifier::InitDownloadAck => 3 << 5,
             ServerCommandSpecifier::DownloadSegmentAck => 1 << 5,
-            ServerCommandSpecifier::InitiateUpload => 2 << 5,
+            ServerCommandSpecifier::InitUpload => 2 << 5,
             ServerCommandSpecifier::UploadSegment => 0 << 5,
         }
     }
@@ -140,8 +140,8 @@ impl TryFrom<u8> for ServerCommandSpecifier {
         match cs {
             0x00 => Ok(ServerCommandSpecifier::UploadSegment),
             0x20 => Ok(ServerCommandSpecifier::DownloadSegmentAck),
-            0x40 => Ok(ServerCommandSpecifier::InitiateUpload),
-            0x60 => Ok(ServerCommandSpecifier::InitiateDownloadAck),
+            0x40 => Ok(ServerCommandSpecifier::InitUpload),
+            0x60 => Ok(ServerCommandSpecifier::InitDownloadAck),
             code => Err(Error::UnknownServerCommandSpecifier(code >> 5))
         }
     }
@@ -149,10 +149,10 @@ impl TryFrom<u8> for ServerCommandSpecifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ClientRequest {
-    InitiateUpload(Index),
+    InitUpload(Index),
     UploadSegment(ToggleBit),
-    InitiateSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
-    InitiateMultipleSegmentDownload(Index, u32), // index and length,
+    InitSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
+    InitMultipleDownload(Index, u32), // index and length,
     DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
     AbortTransfer(Index, AbortCode)
 }
@@ -163,8 +163,8 @@ impl Into<[u8; 8]> for ClientRequest {
         let mut req = [0; 8];
 
         match self {
-            ClientRequest::InitiateUpload(ix) => {            
-                req[0] = ClientCommandSpecifier::InitiateUpload.into();
+            ClientRequest::InitUpload(ix) => {            
+                req[0] = ClientCommandSpecifier::InitUpload.into();
                 ix.write_to_slice(&mut req[1 .. 4]);
             },
             
@@ -174,8 +174,8 @@ impl Into<[u8; 8]> for ClientRequest {
                 req[0] = c | u;
             },
             
-            ClientRequest::InitiateSingleSegmentDownload(ix, len, data) => {
-                req[0] = ClientCommandSpecifier::InitiateDownload.into();
+            ClientRequest::InitSingleSegmentDownload(ix, len, data) => {
+                req[0] = ClientCommandSpecifier::InitDownload.into();
                 //len is n field in first byte, represented 4-len value (len must be from 0 to 4, other is mistake)
                 let len = if len <= 4 {
                     4 - len
@@ -197,8 +197,8 @@ impl Into<[u8; 8]> for ClientRequest {
                 // Note: data[3] is not used due to byte constraints
             },
 
-            ClientRequest::InitiateMultipleSegmentDownload(ix, len) => {
-                req[0] = ClientCommandSpecifier::InitiateDownload.into();
+            ClientRequest::InitMultipleDownload(ix, len) => {
+                req[0] = ClientCommandSpecifier::InitDownload.into();
 
                 //setup sized bit if we specify len
                 if len > 0 {
@@ -242,9 +242,9 @@ impl TryFrom<[u8; 8]> for ClientRequest {
         let code = ClientCommandSpecifier::try_from(req[0])?;
 
         match code {
-            ClientCommandSpecifier::InitiateUpload => {
+            ClientCommandSpecifier::InitUpload => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
-                Ok(ClientRequest::InitiateUpload(ix))
+                Ok(ClientRequest::InitUpload(ix))
             },
             
             ClientCommandSpecifier::UploadSegment => {
@@ -252,7 +252,7 @@ impl TryFrom<[u8; 8]> for ClientRequest {
                 Ok(ClientRequest::UploadSegment(t))
             },
 
-            ClientCommandSpecifier::InitiateDownload => {
+            ClientCommandSpecifier::InitDownload => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
                 // Determine if it's a single or multiple segment download based on s and e bits in first byte
                 let is_expedited = (req[0] >> 1 ) & 1 > 0;
@@ -261,24 +261,24 @@ impl TryFrom<[u8; 8]> for ClientRequest {
                 match (is_expedited, is_sized) {
                     (false, false) => {
                         //Unspecified len download request
-                        Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, 0))
+                        Ok(ClientRequest::InitMultipleDownload(ix, 0))
                     },
                     (false, true) => {
                         let len = u32::from_le_bytes([req[4], req[5], req[6], req[7]]);
-                        Ok(ClientRequest::InitiateMultipleSegmentDownload(ix, len))
+                        Ok(ClientRequest::InitMultipleDownload(ix, len))
                     },
                     (true, true) => {
                         //Expedited download request
                         let len= 4 - (( req[0] >> 2 ) & 0x3);
                         let mut data = [0u8;4];
                         data[..4].copy_from_slice(&req[4..8]);
-                        Ok(ClientRequest::InitiateSingleSegmentDownload(ix, len, data))
+                        Ok(ClientRequest::InitSingleSegmentDownload(ix, len, data))
                     },
                     (true, false) => {
                         //Expedited, but len not specified. Not sure is this used in real and have any meaning
                         let mut data = [0u8;4];
                         data[..3].copy_from_slice(&req[4..8]);
-                        Ok(ClientRequest::InitiateSingleSegmentDownload(ix, 0, data))
+                        Ok(ClientRequest::InitSingleSegmentDownload(ix, 0, data))
                     }
                 }
             },
@@ -304,8 +304,8 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerResponse {
     UploadSingleSegment( Index, u8, [u8; 4] ),
-    UploadInitMultipleSegments(Index, u32),
-    UploadMultipleSegments(ToggleBit, bool, u8, [u8; 7]),
+    UploadInitMultiples(Index, u32),
+    UploadMultiples(ToggleBit, bool, u8, [u8; 7]),
     DownloadInitAck(Index),
     DownloadSegmentAck(ToggleBit)
 }
@@ -316,7 +316,7 @@ impl Into<[u8; 8]> for ServerResponse {
 
         match self {
             ServerResponse::UploadSingleSegment(ix, len, data) => {
-                let cs: u8 = ServerCommandSpecifier::InitiateUpload.into();
+                let cs: u8 = ServerCommandSpecifier::InitUpload.into();
 
                 if len > 4 {
                     panic!("Expedited upload segment len out of range!");
@@ -330,8 +330,8 @@ impl Into<[u8; 8]> for ServerResponse {
                 req[4 .. 8].copy_from_slice(&data);
             },
             
-            ServerResponse::UploadInitMultipleSegments(ix, len) => {
-                let cs: u8 = ServerCommandSpecifier::InitiateUpload.into();
+            ServerResponse::UploadInitMultiples(ix, len) => {
+                let cs: u8 = ServerCommandSpecifier::InitUpload.into();
 
                 let ty: u8 = if len == 0 {
                     TransferType::NormalUnspecifiedSize.into()
@@ -345,7 +345,7 @@ impl Into<[u8; 8]> for ServerResponse {
                 req[4 .. 8].copy_from_slice(&len.to_le_bytes());
             }
             
-            ServerResponse::UploadMultipleSegments(tb, is_end, len, data) => {
+            ServerResponse::UploadMultiples(tb, is_end, len, data) => {
                 let cs: u8 = ServerCommandSpecifier::UploadSegment.into();
                 let t: u8 = tb.into();
                 let len = if len <= 7 {
@@ -361,7 +361,7 @@ impl Into<[u8; 8]> for ServerResponse {
             }
 
             ServerResponse::DownloadInitAck(ix) => {
-                let cs: u8 = ServerCommandSpecifier::InitiateDownloadAck.into(); // ?
+                let cs: u8 = ServerCommandSpecifier::InitDownloadAck.into(); // ?
                 
                 // Set the command specifier for single segment download acknowledgment
                 req[0] = cs;
@@ -391,14 +391,14 @@ impl TryFrom<[u8; 8]> for ServerResponse {
         let code = ServerCommandSpecifier::try_from(req[0])?;
 
         match code {
-            ServerCommandSpecifier::InitiateUpload => {
+            ServerCommandSpecifier::InitUpload => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
                 let ty = TransferType::try_from(req[0])?;
                 
                 match ty {
                     TransferType::Normal => {
                         let n = u32::from_le_bytes(req[4 .. 8].try_into().unwrap());
-                        Ok(ServerResponse::UploadInitMultipleSegments(ix, n))
+                        Ok(ServerResponse::UploadInitMultiples(ix, n))
                     },
                     
                     TransferType::ExpeditedWithSize(n) => {
@@ -408,7 +408,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
                         Ok(ServerResponse::UploadSingleSegment(ix, n, data))
                     },
                     TransferType::NormalUnspecifiedSize => {
-                        Ok(ServerResponse::UploadInitMultipleSegments(ix, 0))
+                        Ok(ServerResponse::UploadInitMultiples(ix, 0))
                     },
                 }
             },
@@ -420,10 +420,10 @@ impl TryFrom<[u8; 8]> for ServerResponse {
                 let last = (req[0] & 1) == 1;
                 let len = 7 - ((req[0] >> 1) & 0x07);
 
-                Ok(ServerResponse::UploadMultipleSegments(toggle, last, len, data))
+                Ok(ServerResponse::UploadMultiples(toggle, last, len, data))
             },
 
-            ServerCommandSpecifier::InitiateDownloadAck => {
+            ServerCommandSpecifier::InitDownloadAck => {
                 let ix = Index::read_from_slice(&req[1 .. 4]);
                 Ok(ServerResponse::DownloadInitAck(ix))
             },
@@ -444,7 +444,7 @@ mod tests {
     //----------------------------Client side tests------------------------------------------------//
     #[test]
     fn client_upload_init() {
-        let req = ClientRequest::InitiateUpload(Index::new(0x1000, 0x01));
+        let req = ClientRequest::InitUpload(Index::new(0x1000, 0x01));
         let req_buf: [u8; 8] = req.clone().into();
 
         //CiA301 7.2.4.3.6 - SDO upload initiate
@@ -474,7 +474,7 @@ mod tests {
     fn client_download_single_init() {
         let index = Index::new(0x1000, 0x01);
 
-        let req = ClientRequest::InitiateSingleSegmentDownload( index, 4, [0x01, 0x02, 0x03, 0x04] );
+        let req = ClientRequest::InitSingleSegmentDownload( index, 4, [0x01, 0x02, 0x03, 0x04] );
 
         let req_buf: [u8; 8] = req.clone().into();
 
@@ -519,7 +519,7 @@ mod tests {
     #[test]
     fn client_download_segment_init() {
         let index = Index::new(0x1000, 0x01);
-        let req = ClientRequest::InitiateMultipleSegmentDownload( index, 10 );
+        let req = ClientRequest::InitMultipleDownload( index, 10 );
 
         let req_buf: [u8; 8] = req.clone().into();
 
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn client_download_segment_init_unspecified_len() {
         let index = Index::new(0x1000, 0x01);
-        let req = ClientRequest::InitiateMultipleSegmentDownload( index, 0 );
+        let req = ClientRequest::InitMultipleDownload( index, 0 );
 
         let req_buf: [u8; 8] = req.clone().into();
 
@@ -583,7 +583,7 @@ mod tests {
     #[test]
     fn server_resp_initiate_multiply_segments_with_specified_len(){
         let index = Index::new( 0x1000, 0x01 );
-        let resp = ServerResponse::UploadInitMultipleSegments( index, 20 );
+        let resp = ServerResponse::UploadInitMultiples( index, 20 );
 
         let resp_buf:[u8; 8] = resp.clone().into();
         //CiA 301 7.2.4.3.6 SDO protocol upload initiate response section
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn server_resp_initiate_multiply_segments_with_unspecified_len(){
         let index = Index::new( 0x1000, 0x01 );
-        let resp = ServerResponse::UploadInitMultipleSegments( index, 0 );
+        let resp = ServerResponse::UploadInitMultiples( index, 0 );
 
         let resp_buf:[u8; 8] = resp.clone().into();
         //CiA 301 7.2.4.3.6 SDO protocol upload initiate response section
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn server_resp_upload_last_segment(){
-        let resp = ServerResponse::UploadMultipleSegments(ToggleBit(true), true, 5, [1, 2, 3, 4, 5, 6, 7]);
+        let resp = ServerResponse::UploadMultiples(ToggleBit(true), true, 5, [1, 2, 3, 4, 5, 6, 7]);
 
         let resp_buf:[u8; 8] = resp.clone().into();
         //CiA 301 7.2.4.3.7 SDO protocol upload segment response section
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn server_resp_upload_intermidiate_segment(){
-        let resp = ServerResponse::UploadMultipleSegments(ToggleBit(false), false, 7, [1, 2, 3, 4, 5, 6, 7]);
+        let resp = ServerResponse::UploadMultiples(ToggleBit(false), false, 7, [1, 2, 3, 4, 5, 6, 7]);
 
         let resp_buf:[u8; 8] = resp.clone().into();
         //CiA 301 7.2.4.3.7 SDO protocol upload segment response section
