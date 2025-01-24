@@ -1,6 +1,8 @@
 // use futures::future::BoxFuture;
 
 use crate::heartbeat::*;
+use crate::sdo::{Error as SdoError};
+use crate::sdo::*;
 use crate::sdo::machines::*;
 use crate::raw::*;
 use crate::cobid::*;
@@ -19,13 +21,56 @@ pub struct ClientCtx<C> {
 impl<C: CANInterface> ClientCtx<C>
 {   
     #[inline]
-    fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E> {
+    fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E>
+    where
+        E: From<<C as CANInterface>::Error> 
+    {
         // todo
         Ok(())
     }
 
+    async fn handle_sdo_rx<E>(self: &mut Self, node: u8, data: [u8; 8]) -> Result<(), E>
+    where
+        E: From<<C as CANInterface>::Error> + From<SdoError>
+    {
+        let response = ServerResponse::try_from(data)?;
+
+        self.interface.sdo.transit(response);
+        match self.interface.sdo.observe() {
+            None => {},
+            Some(r) => {
+                match r {
+                    
+                    ClientOutput::Output(out) => {
+                        let data_out: [u8; 8] = out.into();
+                        let fun_code = FunCode::Node(NodeCmd::SdoReq, node);
+                        let frame_out = CANFrame {
+                            can_cobid: fun_code.into(),
+                            can_len: 8,
+                            can_data: data_out
+                        };
+                        self.physical.send_frame(frame_out).await?;
+                    }
+                    
+                    ClientOutput::Done(res) => {
+                        // to something with result
+                    }
+
+                    ClientOutput::Error(err) => {
+                        // handle error
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }   
+    
     #[inline]
-    fn handle_node_cmd<E>(self: &mut Self, cmd: NodeCmd, node: u8, data: [u8; 8]) -> Result<(), E> {
+    async fn handle_node_cmd<E>(self: &mut Self, cmd: NodeCmd, node: u8, data: [u8; 8]) -> Result<(), E>
+    where
+        E: From<<C as CANInterface>::Error> + From<SdoError>
+    {
         match cmd {
             NodeCmd::Emergency => {},
             NodeCmd::Time => {},
@@ -47,18 +92,21 @@ impl<C: CANInterface> ClientCtx<C>
     }
     
     #[inline]   
-    fn handle_rx<E>(self: &mut Self, frame: CANFrame) -> Result<(), E> {
+    async fn handle_rx<E>(self: &mut Self, frame: CANFrame) -> Result<(), E>
+    where
+        E: From<<C as CANInterface>::Error> + From<SdoError>
+    {
         let fun_code: FunCode = FunCode::from(frame.can_cobid);
 
         match fun_code {
             FunCode::Broadcast(cmd) => self.handle_broadcast(cmd),
-            FunCode::Node(cmd, node) => self.handle_node_cmd(cmd, node, frame.can_data),
+            FunCode::Node(cmd, node) => self.handle_node_cmd(cmd, node, frame.can_data).await,
         }
     }
     
     pub async fn run<E>(mut self: Self) -> Result<(), E>
     where
-        E: From<<C as CANInterface>::Error>
+        E: From<<C as CANInterface>::Error> + From<SdoError>
     {
 
         loop {
@@ -70,7 +118,7 @@ impl<C: CANInterface> ClientCtx<C>
                 }
 
                 CANEvent::Rx(frame) => {
-                    todo!()
+                    self.handle_rx::<E>(frame).await?;
                 }
             }
         }
