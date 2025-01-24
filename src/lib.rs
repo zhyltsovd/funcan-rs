@@ -11,4 +11,11 @@ pub mod sdo;
 pub mod dictionary;
 /// Emergency types and functions
 pub mod emcy;
+/// Heartbeat
+pub mod heartbeat;
 
+/// CANOpen cobid
+pub mod cobid;
+
+/// CANOpen client interface
+pub mod client;
