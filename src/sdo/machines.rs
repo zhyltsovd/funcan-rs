@@ -21,7 +21,7 @@ enum ClientState {
 
     InitSingleDownload(Index, usize),          
     InitMultipleDownload(Index, usize),          
-    DownloadingSegments(ToggleBit),      
+    DownloadingSegments(ToggleBit, usize),      
     DownloadCompleted,
 
     ErrorState(Error),
@@ -123,55 +123,31 @@ impl MachineTrans<ServerResponse> for ClientMachine {
             }
 
             // InitDownload -> DownloadInitAck (multi-segment)
-            (ClientState::InitMultipleDownload(index, _len), ServerResponse::DownloadInitAck(res_index)) => {
+            (ClientState::InitMultipleDownload(index, len), ServerResponse::DownloadInitAck(res_index)) => {
                 if res_index != * index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
-                    self.state = ClientState::DownloadingSegments(ToggleBit(false))
+                    self.state = ClientState::DownloadingSegments(ToggleBit(false), *len);
                 }
             }
 
-            
-            
-            /*
-            
-
-                    let end = len <= 7;
-                    let seg_len = len;
-                    let mut data = [0; 7];
-                    data[0..seg_len as usize].copy_from_slice(&self.data[0..seg_len as usize]);
-                    self.data_index = seg_len as usize;
-                    let req = ClientRequest::DownloadSegment(ToggleBit::First, end, seg_len, data);
-                    let next_state = ClientState::DownloadingSegments(ToggleBit::First, self.data_index);
-                    (next_state, ClientOutput::Output(req))
-
-            // DownloadingSegments -> DownloadSegmentAck
-            (ClientState::DownloadingSegments(toggle, idx), ServerResponse::DownloadSegmentAck(res_toggle)) => {
-                if res_toggle != toggle {
-                    (ClientState::ErrorState(Error::ToggleMismatch), ClientOutput::Error(Error::ToggleMismatch))
+            (ClientState::DownloadingSegments(toggle, n), ServerResponse::DownloadSegmentAck(res_toggle)) => {
+                if res_toggle != *toggle {
+                    self.state = ClientState::ErrorState(Error::ToggleMismatch);
                 } else {
-                    let remaining = self.data.len() - idx;
-                    if remaining == 0 {
-                        (ClientState::MultipleDownloadCompleted, ClientOutput::Done(ClientResult::DownloadCompleted))
+                    if self.data_index + 7 < *n {
+                        self.state = ClientState::DownloadingSegments(!*toggle, *n);
+                        self.data_index = self.data_index + 7; 
                     } else {
-                        let new_toggle = toggle.toggle();
-                        let end = remaining <= 7;
-                        let seg_len = remaining.min(7) as u8;
-                        let mut data = [0; 7];
-                        data[0..seg_len as usize].copy_from_slice(&self.data[idx..idx + seg_len as usize]);
-                        let req = ClientRequest::DownloadSegment(new_toggle, end, seg_len, data);
-                        let next_state = ClientState::DownloadingSegments(new_toggle, idx + seg_len as usize);
-                        (next_state, ClientOutput::Output(req))
+                        self.state = ClientState::DownloadCompleted;
                     }
                 }
             }
 
             // Default: Unexpected response
-            (state, response) => {
+            (_state, _response) => {
                 self.state = ClientState::ErrorState(Error::StateResponseMismatch);
             }
-
-            */
         };
     }
 
@@ -216,15 +192,20 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 // Prepare data segment to download
                 let mut data = [0u8; 7];
                 let ix0 = self.data_index;
-                let ix1 = n.min(ix0 + 7);
+                let ix1 = (ix0 + 7).min(*n);
+                let end = self.data_index + 7 >= *n;
                 
                 data.copy_from_slice(&self.data[ix0..ix1]);
-                Some(ClientOutput::Output(ClientRequest::DownloadSegment(*toggle, false, 7, data)))
+                Some(ClientOutput::Output(ClientRequest::DownloadSegment(*toggle, end, 7, data)))
             }
 
+            ClientState::DownloadCompleted => {
+                Some(ClientOutput::Done(ClientResult::DownloadCompleted))
+            }
+            
             
             ClientState::ErrorState(err) => {
-                Some(ClientOutput::Error(*err))
+                Some(ClientOutput::Error(err.clone()))
             }
         }
     }
