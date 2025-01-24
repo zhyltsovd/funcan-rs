@@ -82,7 +82,7 @@ impl<C: CANInterface> ClientCtx<C>
             NodeCmd::Pdo3Rx => {},
             NodeCmd::Pdo4Tx => {},
             NodeCmd::Pdo4Rx => {},
-            NodeCmd::SdoResp => {},
+            NodeCmd::SdoResp => self.handle_sdo_rx(data, node).await?,
             NodeCmd::SdoReq => {},
             NodeCmd::Heartbeat => { self.interface.heartbeat.transit(data) },
             NodeCmd::Unused => {},
