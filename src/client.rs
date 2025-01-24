@@ -17,15 +17,15 @@ pub struct ClientCtx<C> {
 }
 
 impl<C: CANInterface> ClientCtx<C>
-{
-
+{   
+    #[inline]
     fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E> {
         // todo
         Ok(())
     }
 
+    #[inline]
     fn handle_node_cmd<E>(self: &mut Self, cmd: NodeCmd, node: u8, data: [u8; 8]) -> Result<(), E> {
-        
         match cmd {
             NodeCmd::Emergency => {},
             NodeCmd::Time => {},
@@ -46,6 +46,7 @@ impl<C: CANInterface> ClientCtx<C>
         Ok(())
     }
     
+    #[inline]   
     fn handle_rx<E>(self: &mut Self, frame: CANFrame) -> Result<(), E> {
         let fun_code: FunCode = FunCode::from(frame.can_cobid);
 
