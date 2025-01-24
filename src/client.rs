@@ -3,7 +3,7 @@
 use crate::heartbeat::*;
 use crate::sdo::machines::*;
 use crate::raw::*;
-
+use crate::cobid::*;
 
 struct ClientInterface {
     heartbeat: HeartbeatMachine,
@@ -17,6 +17,26 @@ pub struct ClientCtx<C> {
 
 impl<C: CANInterface> ClientCtx<C>
 {
+
+    fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E> {
+        // todo
+        Ok(())
+    }
+
+    fn handle_node_cmd<E>(self: &mut Self, cmd: NodeCmd, node: u8) -> Result<(), E> {
+        // todo
+        Ok(())
+    }
+    
+    fn handle_rx<E>(self: &mut Self, frame: CANFrame) -> Result<(), E> {
+        let fun_code: FunCode = FunCode::from(frame.can_cobid);
+
+        match fun_code {
+            FunCode::Broadcast(cmd) => self.handle_broadcast(cmd),
+            FunCode::Node(cmd, node) => self.handle_node_cmd(cmd, node),
+        }
+    }
+    
     async fn run<E>(mut self: Self) -> Result<(), E>
     where
         E: From<<C as CANInterface>::Error>
