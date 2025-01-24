@@ -15,7 +15,7 @@ pub enum Error {
 enum ClientState {
     Idle,
     InitUpload(Index),
-    SingleSegmentUploaded(Index),
+    SingleSegmentUploaded,
     UploadingMultiples(ToggleBit), 
     MultiplesUploaded,
 
@@ -75,12 +75,12 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 } else {
                     self.data[0 .. 4].copy_from_slice(&data);
                     self.data_index = len as usize;
-                    self.state = ClientState::SingleSegmentUploaded(*index);
+                    self.state = ClientState::SingleSegmentUploaded;
                 }
             }
 
             // InitUpload -> InitMupltipleSegments
-            (ClientState::InitUpload(index), ServerResponse::UploadInitMultiples(res_index, size)) => {
+            (ClientState::InitUpload(index), ServerResponse::UploadInitMultiples(res_index, _size)) => {
                 if res_index != * index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
@@ -161,7 +161,7 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 Some(ClientOutput::Output(ClientRequest::InitUpload(*ix)))
             }
             
-            ClientState::SingleSegmentUploaded(ix) => {
+            ClientState::SingleSegmentUploaded => {
                 Some(ClientOutput::Done(ClientResult::UploadCompleted(
                     self.data.clone(), self.data_index
                 )))
