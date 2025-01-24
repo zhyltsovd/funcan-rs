@@ -20,7 +20,7 @@ enum ClientState {
     MultipleSegmentsUploaded,
 
     InitSingleDownload(Index, usize),          
-    InitMultipleDownload(Index, u32),          
+    InitMultipleDownload(Index, usize),          
     DownloadingSegments(ToggleBit),      
     DownloadCompleted,
 
@@ -123,17 +123,19 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 }
             }
 
+            // InitiateDownload -> DownloadInitAck (multi-segment)
+            (ClientState::InitiateMultipleSegmentDownload(index, _len), ServerResponse::DownloadInitAck(res_index)) => {
+                if res_index != * index {
+                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
+                } else {
+                    self.state = ClientState::DownloadingSegments(ToggleBit(false))
+                }
+            }
 
             
             /*
             
 
-
-            // InitiateDownload -> DownloadInitAck (multi-segment)
-            (ClientState::InitiateDownload(index, Some(len)), ServerResponse::DownloadInitAck(res_index)) => {
-                if res_index != * index {
-                    (ClientState::ErrorState(Error::ProtocolError), ClientOutput::Error(Error::ProtocolError))
-                } else {
                     let end = len <= 7;
                     let seg_len = len;
                     let mut data = [0; 7];
@@ -142,8 +144,7 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                     let req = ClientRequest::DownloadSegment(ToggleBit::First, end, seg_len, data);
                     let next_state = ClientState::DownloadingSegments(ToggleBit::First, self.data_index);
                     (next_state, ClientOutput::Output(req))
-                }
-            }
+
             // DownloadingSegments -> DownloadSegmentAck
             (ClientState::DownloadingSegments(toggle, idx), ServerResponse::DownloadSegmentAck(res_toggle)) => {
                 if res_toggle != toggle {
@@ -206,7 +207,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 
                 Some(ClientOutput::Output(ClientRequest::InitiateSingleSegmentDownload(*ix, *len as u8, data)))
             }
-                    
+
+            ClientState::InitiateMultipleSegmentDownload(index, len) => {
+                Some(ClientOutput::Output(ClientRequest::InitiateMultipleSegmentDownload(index, len as u32)))          
+            }
+            
             ClientState::ErrorState(err) => {
                 Some(ClientOutput::Error(*err))
             }
