@@ -10,7 +10,7 @@ use crate::sdo::Error as SdoError;
 use crate::sdo::*;
 
 pub enum ClientCmd<Ix> {
-    Read(Ix),
+    Read(u8, Ix),
 }
 
 /// Represents an event in the raw CAN interface.
@@ -86,12 +86,18 @@ where
     }
 
     #[inline]
-    fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index>) -> Result<(), E> {
+    async fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index>) -> Result<(), E>
+    where
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error>
+    {
         match cmd {
-            ClientCmd::Read(ix) => {
+            ClientCmd::Read(node, ix) => {
                 if let Some(st) = self.interface.sdo.observe() {
                     if st.is_ready() {
                         self.interface.sdo.read(ix.into());
+                        if let Some(ClientOutput::Output(out)) = self.interface.sdo.observe() {
+                            self.handle_sdo_request::<E>(node, out).await?;
+                        }
                     }
                 }
             }
@@ -117,8 +123,7 @@ where
         E: for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         match r {
-            ClientResult::UploadCompleted(data, len) => {
-                let ix = Index::new(0, 0);
+            ClientResult::UploadCompleted(ix, data, len) => {
                 let x = D::Object::try_from((ix, &data[0..len]))?;
                 self.interface.dictionary.set(x);
             }
@@ -129,6 +134,21 @@ where
         Ok(())
     }
 
+    async fn handle_sdo_request<E>(self: &mut Self, node: u8, out: ClientRequest) -> Result<(), E>
+    where
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error> 
+    {
+        let data_out: [u8; 8] = out.into();
+        let fun_code = FunCode::Node(NodeCmd::SdoReq, node);
+        let frame_out = CANFrame {
+            can_cobid: fun_code.into(),
+            can_len: 8,
+            can_data: data_out,
+        };
+        self.physical.send_frame(frame_out).await?;
+        Ok(())
+    }
+    
     async fn handle_sdo_rx<E>(self: &mut Self, node: u8, data: [u8; 8]) -> Result<(), E>
     where
         E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error>
@@ -143,14 +163,7 @@ where
             Some(r) => {
                 match r {
                     ClientOutput::Output(out) => {
-                        let data_out: [u8; 8] = out.into();
-                        let fun_code = FunCode::Node(NodeCmd::SdoReq, node);
-                        let frame_out = CANFrame {
-                            can_cobid: fun_code.into(),
-                            can_len: 8,
-                            can_data: data_out,
-                        };
-                        self.physical.send_frame(frame_out).await?;
+                        self.handle_sdo_request::<E>(node, out).await?;
                     }
 
                     ClientOutput::Done(res) => {
@@ -225,7 +238,7 @@ where
 
             match event {
                 CANEvent::Cmd(cmd) => {
-                    self.handle_cmd::<E>(cmd)?;
+                    self.handle_cmd::<E>(cmd).await?;
                 }
 
                 CANEvent::Rx(frame) => {
