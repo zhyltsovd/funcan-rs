@@ -9,8 +9,8 @@ use crate::sdo::machines::*;
 use crate::sdo::Error as SdoError;
 use crate::sdo::*;
 
-pub enum ClientCmd {
-    Read(Index),
+pub enum ClientCmd<Ix> {
+    Read(Ix),
 }
 
 /// Represents an event in the raw CAN interface.
@@ -65,7 +65,7 @@ pub struct ClientCtx<C, D> {
     physical: C,
 }
 
-impl<C: CANInterface<ClientCmd>, D: Dictionary> ClientCtx<C, D>
+impl<D: Dictionary, C: CANInterface<ClientCmd<D::Index>>> ClientCtx<C, D>
 where
     D::Index: TryFrom<Index> + Into<Index>,
     D::Object: for<'a> TryFrom<(Index, &'a [u8])>
@@ -86,12 +86,12 @@ where
     }
 
     #[inline]
-    fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd) -> Result<(), E> {
+    fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index>) -> Result<(), E> {
         match cmd {
             ClientCmd::Read(ix) => {
                 if let Some(st) = self.interface.sdo.observe() {
                     if st.is_ready() {
-                        self.interface.sdo.read(ix);
+                        self.interface.sdo.read(ix.into());
                     }
                 }
             }
@@ -103,7 +103,7 @@ where
     #[inline]
     fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E>
     where
-        E: From<<C as CANInterface<ClientCmd>>::Error>,
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error>,
     {
         // todo
         Ok(())
@@ -131,7 +131,7 @@ where
 
     async fn handle_sdo_rx<E>(self: &mut Self, node: u8, data: [u8; 8]) -> Result<(), E>
     where
-        E: From<<C as CANInterface<ClientCmd>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         let response = ServerResponse::try_from(data)?;
 
@@ -173,7 +173,7 @@ where
         data: [u8; 8],
     ) -> Result<(), E>
     where
-        E: From<<C as CANInterface<ClientCmd>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         match cmd {
             NodeCmd::Emergency => {}
@@ -198,7 +198,7 @@ where
     #[inline]
     async fn handle_rx<E>(self: &mut Self, frame: CANFrame) -> Result<(), E>
     where
-        E: From<<C as CANInterface<ClientCmd>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         let fun_code: FunCode = FunCode::from(frame.can_cobid);
 
@@ -210,7 +210,7 @@ where
 
     pub async fn run<E>(mut self: Self) -> Result<(), E>
     where
-        E: From<<C as CANInterface<ClientCmd>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+        E: From<<C as CANInterface<ClientCmd<D::Index>>>::Error> + From<SdoError> + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         loop {
             let event = self.physical.wait_can_event().await?;
