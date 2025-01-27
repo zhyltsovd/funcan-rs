@@ -13,13 +13,13 @@ pub enum Error {
 
 enum ClientState {
     Idle,
-    InitUpload(Index),
+    InitUpload,
     SingleSegmentUploaded,
     UploadingMultiples(ToggleBit),
     MultiplesUploaded,
 
-    InitSingleDownload(Index, usize),
-    InitMultipleDownload(Index, usize),
+    InitSingleDownload(usize),
+    InitMultipleDownload(usize),
     DownloadingSegments(ToggleBit, usize),
     DownloadCompleted,
 
@@ -27,13 +27,14 @@ enum ClientState {
 }
 
 pub struct ClientMachine {
+    index: Index, 
     state: ClientState,
     data_index: usize,
     data: [u8; 1024],
 }
 
 pub enum ClientResult {
-    UploadCompleted([u8; 1024], usize),
+    UploadCompleted(Index, [u8; 1024], usize),
     DownloadCompleted,
     TransferAborted(AbortCode),
 }
@@ -56,6 +57,7 @@ impl ClientOutput {
 impl Default for ClientMachine {
     fn default() -> Self {
         ClientMachine {
+            index: Index::new(0, 0),
             state: ClientState::Idle,
             data_index: 0,
             data: [0; 1024],
@@ -65,7 +67,8 @@ impl Default for ClientMachine {
 
 impl ClientMachine {
     pub fn read(self: &mut Self, index: Index) {
-        self.state = ClientState::InitUpload(index);
+        self.index = index;
+        self.state = ClientState::InitUpload;
     }
 }
 
@@ -82,11 +85,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
             // ---- Upload Handling ----
             // InitUpload -> UploadSingleSegment
             (
-                ClientState::InitUpload(index),
+                ClientState::InitUpload,
                 ServerResponse::UploadSingleSegment(res_index, len, data),
             ) => {
-                if res_index != *index {
-                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
+                if res_index != self.index {
+                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
                 } else {
                     self.data[0..4].copy_from_slice(&data);
                     self.data_index = len as usize;
@@ -96,11 +99,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
 
             // InitUpload -> InitMupltipleSegments
             (
-                ClientState::InitUpload(index),
+                ClientState::InitUpload,
                 ServerResponse::UploadInitMultiples(res_index, _size),
             ) => {
-                if res_index != *index {
-                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
+                if res_index != self.index {
+                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
                 } else {
                     self.data_index = 0;
                     self.state = ClientState::UploadingMultiples(ToggleBit(false));
@@ -135,11 +138,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
             // ---- Download Handling ----
             // InitDownload -> DownloadInitAck (single segment)
             (
-                ClientState::InitSingleDownload(index, _len),
+                ClientState::InitSingleDownload(_len),
                 ServerResponse::DownloadInitAck(res_index),
             ) => {
-                if res_index != *index {
-                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
+                if res_index != self.index {
+                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
                 } else {
                     self.state = ClientState::DownloadCompleted
                 }
@@ -147,11 +150,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
 
             // InitDownload -> DownloadInitAck (multi-segment)
             (
-                ClientState::InitMultipleDownload(index, len),
+                ClientState::InitMultipleDownload(len),
                 ServerResponse::DownloadInitAck(res_index),
             ) => {
-                if res_index != *index {
-                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
+                if res_index != self.index {
+                    self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
                 } else {
                     self.state = ClientState::DownloadingSegments(ToggleBit(false), *len);
                 }
@@ -184,12 +187,12 @@ impl MachineTrans<ServerResponse> for ClientMachine {
         match &self.state {
             ClientState::Idle => None,
 
-            ClientState::InitUpload(ix) => {
-                Some(ClientOutput::Output(ClientRequest::InitUpload(*ix)))
+            ClientState::InitUpload => {
+                Some(ClientOutput::Output(ClientRequest::InitUpload(self.index)))
             }
 
             ClientState::SingleSegmentUploaded => Some(ClientOutput::Done(
-                ClientResult::UploadCompleted(self.data.clone(), self.data_index),
+                ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index),
             )),
 
             ClientState::UploadingMultiples(toggle) => {
@@ -197,20 +200,20 @@ impl MachineTrans<ServerResponse> for ClientMachine {
             }
 
             ClientState::MultiplesUploaded => Some(ClientOutput::Done(
-                ClientResult::UploadCompleted(self.data.clone(), self.data_index),
+                ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index),
             )),
 
-            ClientState::InitSingleDownload(ix, len) => {
+            ClientState::InitSingleDownload(len) => {
                 let mut data = [0; 4];
                 data.copy_from_slice(&self.data[0..*len]);
 
                 Some(ClientOutput::Output(
-                    ClientRequest::InitSingleSegmentDownload(*ix, *len as u8, data),
+                    ClientRequest::InitSingleSegmentDownload(self.index, *len as u8, data),
                 ))
             }
 
-            ClientState::InitMultipleDownload(ix, len) => Some(ClientOutput::Output(
-                ClientRequest::InitMultipleDownload(*ix, *len as u32),
+            ClientState::InitMultipleDownload(len) => Some(ClientOutput::Output(
+                ClientRequest::InitMultipleDownload(self.index, *len as u32),
             )),
 
             ClientState::DownloadingSegments(toggle, n) => {
@@ -234,28 +237,3 @@ impl MachineTrans<ServerResponse> for ClientMachine {
         }
     }
 }
-
-/*
-
-ClientState::InitMultiples(ix, len) => {
-    Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
-}
-
-
-ClientState::InitDownload(ix, len_opt) => {
-    if let Some(len) = len_opt {
-        Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
-    } else {
-
-    }
-}
-
-
-ClientState::MultipleDownloadCompleted => {
-    Some(ClientOutput::Done(ClientResult::DownloadCompleted))
-}
-
-
-ClientState::AbortInProgress => {
-    Some(ClientOutput::Output(ClientRequest::AbortTransfer(AbortCode::Generic)))
-}*/
