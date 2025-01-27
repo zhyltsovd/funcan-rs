@@ -54,14 +54,17 @@ impl ClientOutput {
     }
 }
 
-impl ClientMachine {
-    pub fn new() -> Self {
+impl Default for ClientMachine {
+    fn default() -> Self {
         ClientMachine {
             state: ClientState::Idle,
             data_index: 0,
             data: [0; 1024],
         }
     }
+}
+
+impl ClientMachine {
 
     pub fn read(self: &mut Self, index: Index) {
         self.state = ClientState::InitUpload(index);

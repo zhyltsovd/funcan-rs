@@ -64,6 +64,22 @@ pub struct ClientCtx<C, D, Factory> {
 
 impl<C: CANInterface<ClientCmd>, D: CANDictionary, Factory: CANFactory> ClientCtx<C, D, Factory>
 {
+    pub fn new(c: C, d: D, f: Factory) -> Self {
+        let interface = ClientInterface {
+            heartbeat: HeartbeatMachine::default(),
+            sdo: ClientMachine::default(),
+            dictionary: d,
+            factory: f
+        };
+
+        let ctx = Self {
+            interface: interface,
+            physical: c
+        };
+
+        ctx
+    } 
+    
     #[inline]
     fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd) -> Result<(), E> {
         match cmd {
