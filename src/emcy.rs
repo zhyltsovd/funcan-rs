@@ -1,4 +1,3 @@
-
 #[repr(u16)]
 enum EmergencyClass {
     ErrorResetOrNoError = 0x0000,
@@ -68,7 +67,6 @@ impl TryFrom<u16> for EmergencyClass {
         }
     }
 }
-
 
 /*
 

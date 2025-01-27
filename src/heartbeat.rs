@@ -1,7 +1,7 @@
 use crate::machine::*;
 
 pub struct HeartbeatMachine {
-//    last: Instant
+    //    last: Instant
 }
 
 impl Default for HeartbeatMachine {
@@ -24,6 +24,6 @@ impl MachineTrans<[u8; 8]> for HeartbeatMachine {
     }
 
     fn initial(self: &mut Self) {
-        * self = Default::default();
+        *self = Default::default();
     }
 }

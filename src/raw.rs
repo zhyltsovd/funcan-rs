@@ -38,8 +38,8 @@ impl fmt::Debug for CANFrame {
                 write!(f, ", ")?;
             }
             write!(f, "{:02X}", self.can_data[i])?;
-        };
-        
+        }
+
         write!(f, "]")
     }
 }
@@ -75,7 +75,7 @@ impl CANFrame {
         // Write CAN data
         buffer[8..16].copy_from_slice(&self.can_data);
     }
-    
+
     /// Deserializes a `CANFrame` from a byte slice.
     ///
     /// # Arguments
@@ -86,10 +86,7 @@ impl CANFrame {
     ///
     /// Panics if the provided buffer is less than 16 bytes long.
     pub fn read_from_slice(buffer: &[u8]) -> Self {
-        assert!(
-            buffer.len() >= 16,
-            "Buffer must be at least 16 bytes long"
-        );
+        assert!(buffer.len() >= 16, "Buffer must be at least 16 bytes long");
 
         // Read COB-ID from little endian bytes
         let can_cobid = u32::from_le_bytes(buffer[0..4].try_into().unwrap());

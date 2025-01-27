@@ -1,4 +1,3 @@
-
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AbortCode {
@@ -41,7 +40,7 @@ impl Into<u32> for AbortCode {
     }
 }
 
-impl From<u32> for AbortCode { 
+impl From<u32> for AbortCode {
     fn from(value: u32) -> Self {
         match value {
             0x05030000 => AbortCode::ToggleBitNotAlternated,

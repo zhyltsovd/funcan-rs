@@ -1,7 +1,3 @@
-extern crate alloc;
-
-use alloc::boxed::Box;
-use core::any::Any;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
@@ -10,11 +6,8 @@ pub struct Index {
 }
 
 impl Index {
-    pub fn new( index: u16, sub: u8 ) -> Self{
-        Index{
-            index,
-            sub
-        }
+    pub fn new(index: u16, sub: u8) -> Self {
+        Index { index, sub }
     }
     /// Writes the Index to a mutable byte slice.
     ///
@@ -27,13 +20,13 @@ impl Index {
             "Buffer must be at least 3 bytes long, got {} bytes.",
             buf.len()
         );
-        
+
         // Little-endian: Least Significant Byte first
-        buf[0] = (self.index & 0xFF) as u8;         // Lower byte of index
-        buf[1] = ((self.index >> 8) & 0xFF) as u8;  // Higher byte of index
-        buf[2] = self.sub;                          // Sub-index
+        buf[0] = (self.index & 0xFF) as u8; // Lower byte of index
+        buf[1] = ((self.index >> 8) & 0xFF) as u8; // Higher byte of index
+        buf[2] = self.sub; // Sub-index
     }
-    
+
     /// Reads the Index from a byte slice.
     ///
     /// # Panics
@@ -45,26 +38,21 @@ impl Index {
             "Buffer must be at least 3 bytes long, got {} bytes.",
             buf.len()
         );
-        
+
         // Little-endian: Least Significant Byte first
         let index = ((buf[1] as u16) << 8) | (buf[0] as u16);
         let sub = buf[2];
-        
+
         Index { index, sub }
     }
 }
- 
-pub trait CANObj: Any {
-    fn index(self: &Self) -> Index;
-}
 
-pub trait CANFactory {
-    fn mk_obj(self: &Self, ix: Index, data: &[u8]) -> Box<dyn CANObj>;
-}
+pub trait Dictionary {
+    type Index;
+    type Object;
 
-pub trait CANDictionary {
-    fn set(self: &mut Self, x: Box<dyn CANObj>); 
-    fn get(self: &Self) -> dyn CANObj; 
+    fn set(self: &mut Self, x: Self::Object);
+    fn get(self: &Self, ix: Self::Index) -> Self::Object;
 }
 
 #[cfg(test)]
@@ -72,7 +60,6 @@ mod tests {
     use super::*;
 
     #[test]
-    
     #[test]
     fn test_index_write_to_slice() {
         let index = Index {
@@ -117,7 +104,7 @@ mod tests {
                 sub: 0xEF,
             },
         ];
-        
+
         for &original in &test_index_cases {
             let mut buf = [0u8; 3];
             original.write_to_slice(&mut buf);

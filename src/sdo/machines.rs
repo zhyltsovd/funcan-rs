@@ -1,6 +1,5 @@
-
-use crate::sdo::*;
 use crate::machine::*;
+use crate::sdo::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -16,12 +15,12 @@ enum ClientState {
     Idle,
     InitUpload(Index),
     SingleSegmentUploaded,
-    UploadingMultiples(ToggleBit), 
+    UploadingMultiples(ToggleBit),
     MultiplesUploaded,
 
-    InitSingleDownload(Index, usize),          
-    InitMultipleDownload(Index, usize),          
-    DownloadingSegments(ToggleBit, usize),      
+    InitSingleDownload(Index, usize),
+    InitMultipleDownload(Index, usize),
+    DownloadingSegments(ToggleBit, usize),
     DownloadCompleted,
 
     ErrorState(Error),
@@ -65,49 +64,54 @@ impl Default for ClientMachine {
 }
 
 impl ClientMachine {
-
     pub fn read(self: &mut Self, index: Index) {
         self.state = ClientState::InitUpload(index);
-    } 
+    }
 }
 
 impl MachineTrans<ServerResponse> for ClientMachine {
-
     type Observation = Option<ClientOutput>;
-    
+
     fn initial(self: &mut Self) {
         self.state = ClientState::Idle;
         self.data_index = 0;
     }
 
     fn transit(self: &mut Self, response: ServerResponse) {
-        
         match (&self.state, response) {
             // ---- Upload Handling ----
             // InitUpload -> UploadSingleSegment
-            (ClientState::InitUpload(index), ServerResponse::UploadSingleSegment(res_index, len, data)) => {
-                if res_index != * index {
+            (
+                ClientState::InitUpload(index),
+                ServerResponse::UploadSingleSegment(res_index, len, data),
+            ) => {
+                if res_index != *index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
-                    self.data[0 .. 4].copy_from_slice(&data);
+                    self.data[0..4].copy_from_slice(&data);
                     self.data_index = len as usize;
                     self.state = ClientState::SingleSegmentUploaded;
                 }
             }
 
             // InitUpload -> InitMupltipleSegments
-            (ClientState::InitUpload(index), ServerResponse::UploadInitMultiples(res_index, _size)) => {
-                if res_index != * index {
+            (
+                ClientState::InitUpload(index),
+                ServerResponse::UploadInitMultiples(res_index, _size),
+            ) => {
+                if res_index != *index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
                     self.data_index = 0;
                     self.state = ClientState::UploadingMultiples(ToggleBit(false));
                 }
             }
-            
 
             // UploadingMultiples -> UploadMupltipleSegments
-            (ClientState::UploadingMultiples(toggle), ServerResponse::UploadMultiples(res_toggle, end, len, data)) => {
+            (
+                ClientState::UploadingMultiples(toggle),
+                ServerResponse::UploadMultiples(res_toggle, end, len, data),
+            ) => {
                 if res_toggle != *toggle {
                     self.state = ClientState::ErrorState(Error::ToggleMismatch);
                 } else {
@@ -130,8 +134,11 @@ impl MachineTrans<ServerResponse> for ClientMachine {
 
             // ---- Download Handling ----
             // InitDownload -> DownloadInitAck (single segment)
-            (ClientState::InitSingleDownload(index, _len), ServerResponse::DownloadInitAck(res_index)) => {
-                if res_index != * index {
+            (
+                ClientState::InitSingleDownload(index, _len),
+                ServerResponse::DownloadInitAck(res_index),
+            ) => {
+                if res_index != *index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
                     self.state = ClientState::DownloadCompleted
@@ -139,21 +146,27 @@ impl MachineTrans<ServerResponse> for ClientMachine {
             }
 
             // InitDownload -> DownloadInitAck (multi-segment)
-            (ClientState::InitMultipleDownload(index, len), ServerResponse::DownloadInitAck(res_index)) => {
-                if res_index != * index {
+            (
+                ClientState::InitMultipleDownload(index, len),
+                ServerResponse::DownloadInitAck(res_index),
+            ) => {
+                if res_index != *index {
                     self.state = ClientState::ErrorState(Error::IndexMismatch(res_index, *index));
                 } else {
                     self.state = ClientState::DownloadingSegments(ToggleBit(false), *len);
                 }
             }
 
-            (ClientState::DownloadingSegments(toggle, n), ServerResponse::DownloadSegmentAck(res_toggle)) => {
+            (
+                ClientState::DownloadingSegments(toggle, n),
+                ServerResponse::DownloadSegmentAck(res_toggle),
+            ) => {
                 if res_toggle != *toggle {
                     self.state = ClientState::ErrorState(Error::ToggleMismatch);
                 } else {
                     if self.data_index + 7 < *n {
                         self.state = ClientState::DownloadingSegments(!*toggle, *n);
-                        self.data_index = self.data_index + 7; 
+                        self.data_index = self.data_index + 7;
                     } else {
                         self.state = ClientState::DownloadCompleted;
                     }
@@ -169,40 +182,36 @@ impl MachineTrans<ServerResponse> for ClientMachine {
 
     fn observe(&self) -> Self::Observation {
         match &self.state {
-            ClientState::Idle => {
-                None
-            }
+            ClientState::Idle => None,
 
             ClientState::InitUpload(ix) => {
                 Some(ClientOutput::Output(ClientRequest::InitUpload(*ix)))
             }
-            
-            ClientState::SingleSegmentUploaded => {
-                Some(ClientOutput::Done(ClientResult::UploadCompleted(
-                    self.data.clone(), self.data_index
-                )))
-            }
+
+            ClientState::SingleSegmentUploaded => Some(ClientOutput::Done(
+                ClientResult::UploadCompleted(self.data.clone(), self.data_index),
+            )),
 
             ClientState::UploadingMultiples(toggle) => {
                 Some(ClientOutput::Output(ClientRequest::UploadSegment(*toggle)))
             }
 
-            ClientState::MultiplesUploaded => {
-                Some(ClientOutput::Done(ClientResult::UploadCompleted(
-                    self.data.clone(), self.data_index
-                )))
-            }
-            
+            ClientState::MultiplesUploaded => Some(ClientOutput::Done(
+                ClientResult::UploadCompleted(self.data.clone(), self.data_index),
+            )),
+
             ClientState::InitSingleDownload(ix, len) => {
                 let mut data = [0; 4];
-                data.copy_from_slice(&self.data[0 .. *len]);
-                
-                Some(ClientOutput::Output(ClientRequest::InitSingleSegmentDownload(*ix, *len as u8, data)))
+                data.copy_from_slice(&self.data[0..*len]);
+
+                Some(ClientOutput::Output(
+                    ClientRequest::InitSingleSegmentDownload(*ix, *len as u8, data),
+                ))
             }
 
-            ClientState::InitMultipleDownload(ix, len) => {
-                Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(* ix, * len as u32)))          
-            }
+            ClientState::InitMultipleDownload(ix, len) => Some(ClientOutput::Output(
+                ClientRequest::InitMultipleDownload(*ix, *len as u32),
+            )),
 
             ClientState::DownloadingSegments(toggle, n) => {
                 // Prepare data segment to download
@@ -210,45 +219,43 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 let ix0 = self.data_index;
                 let ix1 = (ix0 + 7).min(*n);
                 let end = self.data_index + 7 >= *n;
-                
+
                 data.copy_from_slice(&self.data[ix0..ix1]);
-                Some(ClientOutput::Output(ClientRequest::DownloadSegment(*toggle, end, 7, data)))
+                Some(ClientOutput::Output(ClientRequest::DownloadSegment(
+                    *toggle, end, 7, data,
+                )))
             }
 
             ClientState::DownloadCompleted => {
                 Some(ClientOutput::Done(ClientResult::DownloadCompleted))
             }
-            
-            
-            ClientState::ErrorState(err) => {
-                Some(ClientOutput::Error(err.clone()))
-            }
+
+            ClientState::ErrorState(err) => Some(ClientOutput::Error(err.clone())),
         }
     }
 }
 
-            
-/*            
-            
-            ClientState::InitMultiples(ix, len) => {
-                Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
-            }
-            
-            
-            ClientState::InitDownload(ix, len_opt) => {
-                if let Some(len) = len_opt {
-                    Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
-                } else {
-                    
-                }
-            }
+/*
+
+ClientState::InitMultiples(ix, len) => {
+    Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
+}
 
 
-            ClientState::MultipleDownloadCompleted => {
-                Some(ClientOutput::Done(ClientResult::DownloadCompleted))
-            }
+ClientState::InitDownload(ix, len_opt) => {
+    if let Some(len) = len_opt {
+        Some(ClientOutput::Output(ClientRequest::InitMultipleDownload(*ix, *len)))
+    } else {
+
+    }
+}
 
 
-            ClientState::AbortInProgress => {
-                Some(ClientOutput::Output(ClientRequest::AbortTransfer(AbortCode::Generic)))
-            }*/
+ClientState::MultipleDownloadCompleted => {
+    Some(ClientOutput::Done(ClientResult::DownloadCompleted))
+}
+
+
+ClientState::AbortInProgress => {
+    Some(ClientOutput::Output(ClientRequest::AbortTransfer(AbortCode::Generic)))
+}*/

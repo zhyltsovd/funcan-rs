@@ -1,12 +1,10 @@
-
-
-const NODE_MASK: u32 = 0x7F;     // 7 bits for node ID
-const FUN_MASK: u32 = 0x780;     // 4 bits for function code (shifted << 7)
+const NODE_MASK: u32 = 0x7F; // 7 bits for node ID
+const FUN_MASK: u32 = 0x780; // 4 bits for function code (shifted << 7)
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BroadcastCmd {
-    Nmt,    // Network Management
-    Sync,   // Synchronization
+    Nmt,  // Network Management
+    Sync, // Synchronization
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,7 +35,7 @@ pub enum FunCode {
 fn decode_broadcast(cob_id: u32) -> Option<BroadcastCmd> {
     let fun = cob_id & FUN_MASK;
     let node = cob_id & NODE_MASK;
-    
+
     match (fun, node) {
         (0x000, _) => Some(BroadcastCmd::Nmt),
         (0x080, 0x00) => Some(BroadcastCmd::Sync),
@@ -65,7 +63,6 @@ fn decode_node_code(func_part: u32) -> NodeCmd {
 }
 
 impl From<u32> for FunCode {
-
     fn from(cob_id: u32) -> Self {
         if let Some(broadcast) = decode_broadcast(cob_id) {
             FunCode::Broadcast(broadcast)
