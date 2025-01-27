@@ -5,8 +5,8 @@ use core::any::Any;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
-    index: u16,
-    sub: u8,
+    pub index: u16,
+    pub sub: u8,
 }
 
 impl Index {
@@ -70,6 +70,8 @@ pub trait CANDictionary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
     
     #[test]
     fn test_index_write_to_slice() {
