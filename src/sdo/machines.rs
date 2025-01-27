@@ -45,6 +45,15 @@ pub enum ClientOutput {
     Error(Error),
 }
 
+impl ClientOutput {
+    pub fn is_ready(self: &Self) -> bool {
+        match self {
+            ClientOutput::Output(_) => false,
+            _ => true,
+        }
+    }
+}
+
 impl ClientMachine {
     pub fn new() -> Self {
         ClientMachine {
@@ -53,6 +62,10 @@ impl ClientMachine {
             data: [0; 1024],
         }
     }
+
+    pub fn read(self: &mut Self, index: Index) {
+        self.state = ClientState::InitUpload(index);
+    } 
 }
 
 impl MachineTrans<ServerResponse> for ClientMachine {

@@ -1,3 +1,8 @@
+extern crate alloc;
+
+use alloc::boxed::Box;
+use core::any::Any;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
     index: u16,
@@ -47,6 +52,19 @@ impl Index {
         
         Index { index, sub }
     }
+}
+ 
+pub trait CANObj: Any {
+    fn index(self: &Self) -> Index;
+}
+
+pub trait CANFactory {
+    fn mk_obj(self: &Self, ix: Index, data: &[u8]) -> Box<dyn CANObj>;
+}
+
+pub trait CANDictionary {
+    fn set(self: &mut Self, x: Box<dyn CANObj>); 
+    fn get(self: &Self) -> dyn CANObj; 
 }
 
 #[cfg(test)]

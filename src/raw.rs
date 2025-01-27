@@ -2,8 +2,6 @@
 //!
 //! The `raw` module provides an abstract interface for working with raw CAN frames.
 
-use futures::future::BoxFuture;
-
 use crate::machine::*;
 
 use core::fmt;
@@ -44,78 +42,6 @@ impl fmt::Debug for CANFrame {
         
         write!(f, "]")
     }
-}
-
-
-/// Represents an event in the raw CAN interface.
-///
-/// This enum abstracts communication events at the physical layer level,
-/// following the producer-consumer pattern common in embedded systems.
-///
-/// # Variants
-/// - `Tx(CANFrame)`: Transmission event - a frame received from higher protocol layers
-///                   that needs to be transmitted over the physical bus.
-/// - `Rx(CANFrame)`: Reception event - a raw CAN frame received from the physical bus
-///                   that needs to be processed by higher protocol layers.
-///
-/// # Notes
-/// - Designed to be `no_std` compatible
-/// - Can be used with async executors like `tokio::select` or in bare-metal environments
-/// - Tx/Rx terminology follows CAN controller hardware conventions
-pub enum CANEvent {
-    Tx(CANFrame),
-    Rx(CANFrame),
-}
-
-/// Abstract interface for Controller Area Network (CAN) communication.
-///
-/// This trait provides an async-capable abstraction layer for CAN bus operations,
-/// suitable for both standard and embedded (no_std) environments. Implementations
-/// should handle physical layer details while exposing a hardware-agnostic API.
-///
-/// # Type Parameters
-/// - `Error`: Associated error type for implementation-specific error handling
-///
-pub trait CANInterface {
-    /// Error type returned by CAN interface operations.
-    ///
-    /// Represents hardware-specific or protocol errors that can occur during
-    /// frame transmission/reception. Common errors include:
-    /// - Bus-off state
-    /// - Arbitration lost
-    /// - Form/CRC errors
-    /// - TX buffer overflow
-    type Error;
-
-    /// Asynchronously wait for the next CAN bus event.
-    ///
-    /// This function should block until either:
-    /// - A frame is received from the bus (Rx)
-    /// - A transmission slot becomes available (Tx)
-    ///
-    /// # Returns
-    /// [`BoxFuture`] containing either:
-    /// - `Ok(CANEvent)`: Next bus event (Tx/Rx ready)
-    /// - `Err(Self::Error)`: Hardware or protocol error
-    fn wait_can_event<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANEvent, Self::Error>>;
-
-    /// Asynchronously send a raw CAN frame through the physical layer.
-    ///
-    /// This function queues a frame for transmission and returns when:
-    /// - The frame is successfully queued in the TX buffer, or
-    /// - A transmission error occurs
-    ///
-    /// # Parameters
-    /// - `frame`: CAN frame to transmit
-    ///
-    /// # Returns
-    /// [`BoxFuture`] containing:
-    /// - `Ok(())`: Frame successfully queued for transmission
-    /// - `Err(Self::Error)`: Transmission failed
-    fn send_frame<'a>(
-        self: &'a mut Self,
-        frame: CANFrame,
-    ) -> BoxFuture<'a, Result<(), Self::Error>>;
 }
 
 impl Default for CANFrame {
