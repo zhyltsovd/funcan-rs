@@ -65,7 +65,7 @@ pub struct ClientCtx<C, D> {
     physical: C,
 }
 
-impl<D: Dictionary + Sized, C: CANInterface<D>> ClientCtx<C, D>
+impl<D: Dictionary, C: CANInterface<D>> ClientCtx<C, D>
 where
     D::Index: TryFrom<Index> + Into<Index>,
     D::Object: for<'a> TryFrom<(Index, &'a [u8])>,

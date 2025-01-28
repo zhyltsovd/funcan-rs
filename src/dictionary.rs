@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 pub trait DictionaryValue<D: Dictionary>: TryFrom<D::Object> {
-    fn index(_: PhantomData<Self>) -> D::Index;
+    fn index() -> D::Index;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
