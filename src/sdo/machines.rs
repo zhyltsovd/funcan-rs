@@ -45,7 +45,7 @@ pub enum ClientOutput<R> {
     Output(ClientRequest),
     Done(ClientResult<R>),
     Error(Error),
-    Ready
+    Ready,
 }
 
 impl<R> ClientOutput<R> {
