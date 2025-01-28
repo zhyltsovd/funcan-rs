@@ -8,15 +8,14 @@ use crate::raw::*;
 use crate::sdo::machines::*;
 use crate::sdo::Error as SdoError;
 use crate::sdo::*;
-use core::marker::PhantomData;
 
-pub enum ClientCmd<T> {
-    Read(u8, PhantomData<T>),
+pub enum ClientCmd<Index> {
+    Read(u8, Index),
 }
 
 /// Represents an event in the raw CAN interface.
-pub enum CANEvent<T> {
-    Cmd(ClientCmd<T>),
+pub enum CANEvent<Index> {
+    Cmd(ClientCmd<Index>),
     Rx(CANFrame),
 }
 
@@ -41,7 +40,7 @@ pub trait CANInterface<D: Dictionary> {
     type Error;
 
     /// Asynchronously wait for the next CAN bus event.
-    fn wait_can_event<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANEvent<impl DictionaryValue<D>>, Self::Error>>;
+    fn wait_can_event<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANEvent<D::Index>, Self::Error>>;
 
     /// Asynchronously send a raw CAN frame through the physical layer.
     fn send_frame<'a>(
@@ -86,18 +85,15 @@ where
         ctx
     }
 
-    /*
     #[inline]
-    async fn handle_cmd<T, E>(self: &mut Self, cmd: ClientCmd<T>) -> Result<(), E>
+    async fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index>) -> Result<(), E>
     where
-        T: DictionaryValue<D>,
         E: From<<C as CANInterface<D>>::Error>
     {
         match cmd {
-            ClientCmd::Read(node, _t) => {
+            ClientCmd::Read(node, index) => {
                 if let Some(st) = self.interface.sdo.observe() {
                     if st.is_ready() {
-                        let index = <T as DictionaryValue<D>>::index();
                         self.interface.sdo.read(index.into());
                         if let Some(ClientOutput::Output(out)) = self.interface.sdo.observe() {
                             self.handle_sdo_request::<E>(node, out).await?;
@@ -109,7 +105,6 @@ where
 
         Ok(())
     }
-    */
 
     #[inline]
     fn handle_broadcast<E>(self: &mut Self, cmd: BroadcastCmd) -> Result<(), E>
@@ -244,21 +239,7 @@ where
 
             match event {
                 CANEvent::Cmd(cmd) => {
-                    //self.handle_cmd::<_, E>(cmd).await?;
-                      match cmd {
-                          ClientCmd::Read(node, t) => {
-                              if let Some(st) = self.interface.sdo.observe() {
-                                  if st.is_ready() {
-                                      let index: D::Index = DictionaryValue::index(t);
-                                      self.interface.sdo.read(index.into());
-                                      if let Some(ClientOutput::Output(out)) = self.interface.sdo.observe() {
-                                          self.handle_sdo_request::<E>(node, out).await?;
-                                      }
-                                  }
-                              }
-                          }
-                      };
-
+                    self.handle_cmd::<E>(cmd).await?;                 
                 }
 
                 CANEvent::Rx(frame) => {
