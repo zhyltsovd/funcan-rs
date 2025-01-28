@@ -93,10 +93,13 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>,
     {
+        log::info!("handle_cmd");
+        
         match cmd {
             ClientCmd::Read(node, index, resp) => {
                 if let Some(st) = self.interface.sdo.observe() {
                     if st.is_ready() {
+                        log::info!("read cmd");
                         self.interface.sdo.read(index.into(), resp);
                         if let Some(ClientOutput::Output(out)) = self.interface.sdo.observe() {
                             self.handle_sdo_request::<E>(node, out).await?;
@@ -144,6 +147,7 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>,
     {
+        log::info!("handle_sdo_request");
         let data_out: [u8; 8] = out.into();
         let fun_code = FunCode::Node(NodeCmd::SdoReq, node);
         let frame_out = CANFrame {
