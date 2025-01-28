@@ -3,8 +3,8 @@ use futures::future::BoxFuture;
 use crate::cobid::*;
 use crate::dictionary::*;
 use crate::heartbeat::*;
-use crate::machine::*;
 use crate::interfaces::*;
+use crate::machine::*;
 use crate::raw::*;
 use crate::sdo::machines::*;
 use crate::sdo::Error as SdoError;
@@ -41,7 +41,9 @@ pub trait CANInterface<D: Dictionary, R: Responder<D::Object>> {
     type Error;
 
     /// Asynchronously wait for the next CAN bus event.
-    fn wait_can_event<'a>(self: &'a mut Self) -> BoxFuture<'a, Result<CANEvent<D::Index, R>, Self::Error>>;
+    fn wait_can_event<'a>(
+        self: &'a mut Self,
+    ) -> BoxFuture<'a, Result<CANEvent<D::Index, R>, Self::Error>>;
 
     /// Asynchronously send a raw CAN frame through the physical layer.
     fn send_frame<'a>(
@@ -89,7 +91,7 @@ where
     #[inline]
     async fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index, R>) -> Result<(), E>
     where
-        E: From<<C as CANInterface<D, R>>::Error>
+        E: From<<C as CANInterface<D, R>>::Error>,
     {
         match cmd {
             ClientCmd::Read(node, index, resp) => {
@@ -140,7 +142,7 @@ where
 
     async fn handle_sdo_request<E>(self: &mut Self, node: u8, out: ClientRequest) -> Result<(), E>
     where
-        E: From<<C as CANInterface<D, R>>::Error> 
+        E: From<<C as CANInterface<D, R>>::Error>,
     {
         let data_out: [u8; 8] = out.into();
         let fun_code = FunCode::Node(NodeCmd::SdoReq, node);
@@ -152,7 +154,7 @@ where
         self.physical.send_frame(frame_out).await?;
         Ok(())
     }
-    
+
     async fn handle_sdo_rx<E>(self: &mut Self, node: u8, data: [u8; 8]) -> Result<(), E>
     where
         E: From<<C as CANInterface<D, R>>::Error>
@@ -238,12 +240,11 @@ where
             + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
     {
         loop {
-            
             let event = self.physical.wait_can_event().await?;
 
             match event {
                 CANEvent::Cmd(cmd) => {
-                    self.handle_cmd::<E>(cmd).await?;                 
+                    self.handle_cmd::<E>(cmd).await?;
                 }
 
                 CANEvent::Rx(frame) => {
