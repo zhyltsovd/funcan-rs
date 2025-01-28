@@ -236,7 +236,7 @@ impl MachineTrans<u8> for CANFrameMachine {
     /// Observes the current machine state to check for a completed CAN frame.
     ///
     /// Returns `Some(CANFrame)` if in a final state with a valid frame, otherwise `None`.
-    fn observe(self: &Self) -> Self::Observation {
+    fn observe(self: &mut Self) -> Self::Observation {
         match self.state {
             State::Final => {
                 // should consume all input

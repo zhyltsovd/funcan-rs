@@ -1,3 +1,4 @@
+// use crate::interfaces::*;
 use crate::machine::*;
 use crate::sdo::*;
 
@@ -26,26 +27,27 @@ enum ClientState {
     ErrorState(Error),
 }
 
-pub struct ClientMachine {
+pub struct ClientMachine<R> {
     index: Index, 
     state: ClientState,
     data_index: usize,
+    read_responder: Option<R>,
     data: [u8; 1024],
 }
 
-pub enum ClientResult {
-    UploadCompleted(Index, [u8; 1024], usize),
+pub enum ClientResult<R> {
+    UploadCompleted(Index, [u8; 1024], usize, Option<R>),
     DownloadCompleted,
     TransferAborted(AbortCode),
 }
 
-pub enum ClientOutput {
+pub enum ClientOutput<R> {
     Output(ClientRequest),
-    Done(ClientResult),
+    Done(ClientResult<R>),
     Error(Error),
 }
 
-impl ClientOutput {
+impl<R> ClientOutput<R> {
     pub fn is_ready(self: &Self) -> bool {
         match self {
             ClientOutput::Output(_) => false,
@@ -54,9 +56,10 @@ impl ClientOutput {
     }
 }
 
-impl Default for ClientMachine {
+impl<R> Default for ClientMachine<R> {
     fn default() -> Self {
         ClientMachine {
+            read_responder: None,
             index: Index::new(0, 0),
             state: ClientState::Idle,
             data_index: 0,
@@ -65,15 +68,16 @@ impl Default for ClientMachine {
     }
 }
 
-impl ClientMachine {
-    pub fn read(self: &mut Self, index: Index) {
+impl<R> ClientMachine<R> {
+    pub fn read(self: &mut Self, index: Index, r: R) {
         self.index = index;
+        self.read_responder = Some(r);
         self.state = ClientState::InitUpload;
     }
 }
 
-impl MachineTrans<ServerResponse> for ClientMachine {
-    type Observation = Option<ClientOutput>;
+impl<R> MachineTrans<ServerResponse> for ClientMachine<R> {
+    type Observation = Option<ClientOutput<R>>;
 
     fn initial(self: &mut Self) {
         self.state = ClientState::Idle;
@@ -183,7 +187,7 @@ impl MachineTrans<ServerResponse> for ClientMachine {
         };
     }
 
-    fn observe(&self) -> Self::Observation {
+    fn observe(&mut self) -> Self::Observation {
         match &self.state {
             ClientState::Idle => None,
 
@@ -191,17 +195,24 @@ impl MachineTrans<ServerResponse> for ClientMachine {
                 Some(ClientOutput::Output(ClientRequest::InitUpload(self.index)))
             }
 
-            ClientState::SingleSegmentUploaded => Some(ClientOutput::Done(
-                ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index),
-            )),
+            ClientState::SingleSegmentUploaded => {
+                let resp = core::mem::replace(&mut self.read_responder, None);
+                Some(ClientOutput::Done(
+                ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index, resp),
+                ))
+            },
 
             ClientState::UploadingMultiples(toggle) => {
                 Some(ClientOutput::Output(ClientRequest::UploadSegment(*toggle)))
             }
 
-            ClientState::MultiplesUploaded => Some(ClientOutput::Done(
-                ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index),
-            )),
+            ClientState::MultiplesUploaded => {
+                let resp = core::mem::replace(&mut self.read_responder, None);
+                
+                Some(ClientOutput::Done(
+                    ClientResult::UploadCompleted(self.index, self.data.clone(), self.data_index, resp),
+                ))
+            },
 
             ClientState::InitSingleDownload(len) => {
                 let mut data = [0; 4];

@@ -30,7 +30,7 @@ pub trait MachineTrans<X> {
     ///
     /// This method returns an abstract representation of the state or output
     /// of the machine as defined by the `Observation` associated type.
-    fn observe(self: &Self) -> Self::Observation;
+    fn observe(self: &mut Self) -> Self::Observation;
 
     /// Resets the machine's state to its initial state.
     ///
@@ -97,7 +97,7 @@ where
     /// Observes and returns the current state of the composed machine.
     ///
     /// The observation is based on `M1`.
-    fn observe(self: &Self) -> Self::Observation {
+    fn observe(self: &mut Self) -> Self::Observation {
         self.m1.observe()
     }
 

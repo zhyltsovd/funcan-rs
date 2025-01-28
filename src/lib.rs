@@ -14,6 +14,9 @@ pub mod raw;
 /// Common SDO types and functions
 pub mod sdo;
 
+/// Abstract interfaces
+pub mod interfaces;
+
 /// CANOpen cobid
 pub mod cobid;
 

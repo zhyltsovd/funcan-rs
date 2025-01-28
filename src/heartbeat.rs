@@ -19,7 +19,7 @@ impl MachineTrans<[u8; 8]> for HeartbeatMachine {
         // do nothing
     }
 
-    fn observe(self: &Self) -> Self::Observation {
+    fn observe(self: &mut Self) -> Self::Observation {
         ()
     }
 
