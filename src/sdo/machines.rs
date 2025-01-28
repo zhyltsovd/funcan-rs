@@ -45,6 +45,7 @@ pub enum ClientOutput<R> {
     Output(ClientRequest),
     Done(ClientResult<R>),
     Error(Error),
+    Ready
 }
 
 impl<R> ClientOutput<R> {
@@ -187,7 +188,7 @@ impl<R> MachineTrans<ServerResponse> for ClientMachine<R> {
 
     fn observe(&mut self) -> Self::Observation {
         match &self.state {
-            ClientState::Idle => None,
+            ClientState::Idle => Some(ClientOutput::Ready),
 
             ClientState::InitUpload => {
                 Some(ClientOutput::Output(ClientRequest::InitUpload(self.index)))

@@ -14,7 +14,6 @@ publish = true
 
 [dependencies]
 futures = {version = "*", default-features = false, features = ["alloc"]}
-log = "*"
 
 [profile.release]
 opt-level = 3
