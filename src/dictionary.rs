@@ -1,3 +1,9 @@
+use core::marker::PhantomData;
+
+pub trait DictionaryValue<D: Dictionary>: TryFrom<D::Object> {
+    fn index(_: PhantomData<Self>) -> D::Index;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
     pub index: u16,
@@ -47,8 +53,8 @@ impl Index {
 }
 
 pub trait Dictionary {
-    type Index;
-    type Object;
+    type Index: Sized;
+    type Object: Sized;
 
     fn set(self: &mut Self, x: Self::Object);
     fn get(self: &Self, ix: Self::Index) -> Self::Object;
