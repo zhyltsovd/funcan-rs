@@ -10,13 +10,13 @@ use crate::sdo::machines::*;
 use crate::sdo::Error as SdoError;
 use crate::sdo::*;
 
-pub enum ClientCmd<Index, R> {
-    Read(u8, Index, R),
+pub enum ClientCmd<D: Dictionary, R> {
+    Read(u8, D::Index, R),
 }
 
 /// Represents an event in the raw CAN interface.
-pub enum CANEvent<Index, R> {
-    Cmd(ClientCmd<Index, R>),
+pub enum CANEvent<D: Dictionary, R> {
+    Cmd(ClientCmd<D, R>),
     Rx(CANFrame),
 }
 
@@ -43,7 +43,7 @@ pub trait CANInterface<D: Dictionary, R: Responder<D::Object>> {
     /// Asynchronously wait for the next CAN bus event.
     fn wait_can_event<'a>(
         self: &'a mut Self,
-    ) -> BoxFuture<'a, Result<CANEvent<D::Index, R>, Self::Error>>;
+    ) -> BoxFuture<'a, Result<CANEvent<D, R>, Self::Error>>;
 
     /// Asynchronously send a raw CAN frame through the physical layer.
     fn send_frame<'a>(
@@ -89,7 +89,7 @@ where
     }
 
     #[inline]
-    async fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D::Index, R>) -> Result<(), E>
+    async fn handle_cmd<E>(self: &mut Self, cmd: ClientCmd<D, R>) -> Result<(), E>
     where
         E: From<<C as CANInterface<D, R>>::Error>,
     {
