@@ -2,6 +2,32 @@
 use crate::machine::*;
 use crate::sdo::*;
 
+Below is the Rust implementation of finite state machine that handles client-side CANopen SDO protocol communication (object dictionary read and write). It is high level machine, it uses `ServerResponse` as inputs and outputs `ClientRequest` when necessary. I want you to make a dual types for server-side SDO Communion. You should define ServerMachine and implement MachineTrans<ClientRequest> for ServerMachine dualizing client definition so they could successfully communicate. I am working in no-std setting so do not use anything heap-related, use static know-size thing.
+  
+
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ClientRequest {
+    InitUpload(Index),
+    UploadSegment(ToggleBit),
+    InitSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
+    InitMultipleDownload(Index, u32),              // index and length,
+    DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
+    AbortTransfer(Index, AbortCode),
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ServerResponse {
+    UploadSingleSegment(Index, u8, [u8; 4]),
+    UploadInitMultiples(Index, u32),
+    UploadMultiples(ToggleBit, bool, u8, [u8; 7]),
+    DownloadInitAck(Index),
+    DownloadSegmentAck(ToggleBit),
+}
+
+    
+/// Possible errors during SDO communications
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     StateResponseMismatch,
@@ -9,9 +35,9 @@ pub enum Error {
     TransferAborted(AbortCode),
     ToggleMismatch,
     BufferOverflow,
-    ProtocolError,
 }
 
+/// Client states
 enum ClientState {
     Idle,
     InitUpload,
@@ -27,6 +53,7 @@ enum ClientState {
     ErrorState(Error),
 }
 
+/// Client context
 pub struct ClientMachine<RR, RW> {
     index: Index,
     state: ClientState,
@@ -36,12 +63,14 @@ pub struct ClientMachine<RR, RW> {
     data: [u8; 1024],
 }
 
+/// Possible final result that machine produces
 pub enum ClientResult<RR, RW> {
     UploadCompleted(Index, [u8; 1024], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
     TransferAborted(AbortCode),
 }
 
+/// All possible observations of client machine
 pub enum ClientOutput<RR, RW> {
     Output(ClientRequest),
     Done(ClientResult<RR, RW>),
@@ -72,12 +101,14 @@ impl<RR, RW> Default for ClientMachine<RR, RW> {
 }
 
 impl<RR, RW> ClientMachine<RR, RW> {
+    /// Initiates SDO read
     pub fn read(self: &mut Self, index: Index, r: RR) {
         self.index = index;
         self.read_responder = Some(r);
         self.state = ClientState::InitUpload;
     }
 
+    /// Initiates SDO write
     pub fn write<T>(self: &mut Self, index: Index, t: T, r: RW)
     where
         T: IntoBuf,
@@ -93,6 +124,7 @@ impl<RR, RW> ClientMachine<RR, RW> {
     }
 }
 
+/// Finite State Machine implementation
 impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
     type Observation = Option<ClientOutput<RR, RW>>;
 
@@ -270,3 +302,209 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
         }
     }
 }
+
+
+/*
+
+/// Server states
+enum ServerState {
+    Idle,
+    UploadingSingleSegment,
+    UploadingMultipleSegments {
+        response_toggle: ToggleBit,
+        expected_next_toggle: ToggleBit,
+        position: usize,
+    },
+    DownloadingSingleSegment,
+    DownloadingMultipleSegments(ToggleBit, usize),
+    ErrorState(Error),
+}
+
+/// Server context
+pub struct ServerMachine<RR, RW> {
+    index: Index,
+    state: ServerState,
+    upload_data: [u8; 1024],
+    upload_length: usize,
+    download_data: [u8; 1024],
+    download_length: usize,
+    download_position: usize,
+    read_responder: Option<RR>,
+    write_responder: Option<RW>,
+}
+
+/// Possible final result that server produces
+pub enum ServerResult<RR, RW> {
+    UploadCompleted(Option<RR>),
+    DownloadCompleted(Index, [u8; 1024], usize, Option<RW>),
+    TransferAborted(AbortCode),
+}
+
+/// All observations of server machine
+pub enum ServerOutput<RR, RW> {
+    Output(ServerResponse),
+    Done(ServerResult<RR, RW>),
+    Error(Error),
+    Ready,
+}
+
+impl<RR, RW> Default for ServerMachine<RR, RW> {
+    fn default() -> Self {
+        ServerMachine {
+            index: Index::new(0, 0),
+            state: ServerState::Idle,
+            upload_data: [0; 1024],
+            upload_length: 0,
+            download_data: [0; 1024],
+            download_length: 0,
+            download_position: 0,
+            read_responder: None,
+            write_responder: None,
+        }
+    }
+}
+
+impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
+    type Observation = Option<ServerOutput<RR, RW>>;
+
+    fn initial(&mut self) {
+        self.state = ServerState::Idle;
+        self.download_position = 0;
+    }
+
+    fn transit(&mut self, request: ClientRequest) {
+        match (&self.state, request) {
+            (ServerState::Idle, ClientRequest::InitUpload(index)) => {
+                self.index = index;
+                if self.upload_length <= 4 {
+                    self.state = ServerState::UploadingSingleSegment;
+                } else {
+                    self.state = ServerState::UploadingMultipleSegments {
+                        response_toggle: ToggleBit(false),
+                        expected_next_toggle: ToggleBit(true),
+                        position: 0,
+                    };
+                }
+            }
+
+            (
+                ServerState::UploadingMultipleSegments {
+                    expected_next_toggle,
+                    position,
+                    ..
+                },
+                ClientRequest::UploadSegment(toggle),
+            ) => {
+                if toggle != *expected_next_toggle {
+                    self.state = ServerState::ErrorState(Error::ToggleMismatch);
+                } else {
+                    let new_position = position + 7;
+                    self.state = ServerState::UploadingMultipleSegments {
+                        response_toggle: toggle,
+                        expected_next_toggle: !toggle,
+                        position: new_position,
+                    };
+                }
+            }
+
+            (ServerState::Idle, ClientRequest::InitSingleSegmentDownload(index, len, data)) => {
+                self.index = index;
+                if len as usize > self.download_data.len() {
+                    self.state = ServerState::ErrorState(Error::BufferOverflow);
+                } else {
+                    self.download_data[0..len as usize].copy_from_slice(&data[0..len as usize]);
+                    self.download_length = len as usize;
+                    self.state = ServerState::DownloadingSingleSegment;
+                }
+            }
+
+            (ServerState::Idle, ClientRequest::InitMultipleDownload(index, length)) => {
+                self.index = index;
+                let length = length as usize;
+                if length > self.download_data.len() {
+                    self.state = ServerState::ErrorState(Error::BufferOverflow);
+                } else {
+                    self.download_length = length;
+                    self.download_position = 0;
+                    self.state = ServerState::DownloadingMultipleSegments(ToggleBit(false), 0);
+                }
+            }
+
+            (
+                ServerState::DownloadingMultipleSegments(expected_toggle, position),
+                ClientRequest::DownloadSegment(toggle, end, len, data),
+            ) => {
+                if toggle != *expected_toggle {
+                    self.state = ServerState::ErrorState(Error::ToggleMismatch);
+                } else {
+                    let data_len = len as usize;
+                    let new_position = position + data_len;
+                    if new_position > self.download_length {
+                        self.state = ServerState::ErrorState(Error::BufferOverflow);
+                    } else {
+                        self.download_data[position..new_position].copy_from_slice(&data[0..data_len]);
+                        self.download_position = new_position;
+                        self.state = if end {
+                            ServerState::Idle
+                        } else {
+                            ServerState::DownloadingMultipleSegments(!expected_toggle, new_position)
+                        };
+                    }
+                }
+            }
+
+            _ => {
+                self.state = ServerState::ErrorState(Error::StateResponseMismatch);
+            }
+        }
+    }
+
+    fn observe(&mut self) -> Self::Observation {
+        match &self.state {
+            ServerState::Idle => Some(ServerOutput::Ready),
+
+            ServerState::UploadingSingleSegment => {
+                let mut data = [0; 4];
+                data[0..self.upload_length].copy_from_slice(&self.upload_data[0..self.upload_length]);
+                let response = ServerResponse::UploadSingleSegment(self.index, self.upload_length as u8, data);
+                self.state = ServerState::Idle;
+                Some(ServerOutput::Output(response))
+            }
+
+            ServerState::UploadingMultipleSegments {
+                response_toggle,
+                position,
+                ..
+            } => {
+                let remaining = self.upload_length - position;
+                let data_len = remaining.min(7);
+                let end = remaining <= 7;
+                let mut data = [0; 7];
+                data[0..data_len].copy_from_slice(&self.upload_data[*position..position + data_len]);
+                let response = ServerResponse::UploadMultiples(*response_toggle, end, data_len as u8, data);
+                if end {
+                    self.state = ServerState::Idle;
+                }
+                Some(ServerOutput::Output(response))
+            }
+
+            ServerState::DownloadingSingleSegment => {
+                let response = ServerResponse::DownloadInitAck(self.index);
+                self.state = ServerState::Idle;
+                Some(ServerOutput::Output(response))
+            }
+
+            ServerState::DownloadingMultipleSegments(toggle, _) => {
+                let response = ServerResponse::DownloadSegmentAck(*toggle);
+                Some(ServerOutput::Output(response))
+            }
+
+            ServerState::ErrorState(err) => {
+                let err = err.clone();
+                self.state = ServerState::Idle;
+                Some(ServerOutput::Error(err))
+            }
+        }
+    }
+}
+*/
