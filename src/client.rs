@@ -123,7 +123,8 @@ where
     #[inline]
     fn handle_sdo_result<E>(self: &mut Self, r: ClientResult<R>) -> Result<(), E>
     where
-        E: From<<D::Index as TryFrom<Index>>::Error> + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
+        E: From<<D::Index as TryFrom<Index>>::Error>
+            + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
@@ -160,7 +161,7 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>
             + From<SdoError>
-            + From<<D::Index as TryFrom<Index>>::Error> 
+            + From<<D::Index as TryFrom<Index>>::Error>
             + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         let response = ServerResponse::try_from(data)?;
@@ -202,7 +203,7 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>
             + From<SdoError>
-            + From<<D::Index as TryFrom<Index>>::Error> 
+            + From<<D::Index as TryFrom<Index>>::Error>
             + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         match cmd {
