@@ -80,7 +80,7 @@ impl<RR, RW> ClientMachine<RR, RW> {
 
     pub fn write<T>(self: &mut Self, index: Index, t: T, r: RW)
     where
-        T: IntoBuf
+        T: IntoBuf,
     {
         self.index = index;
         let n = t.into_buf(&mut self.data);

@@ -12,7 +12,7 @@ use crate::sdo::*;
 
 pub enum ClientCmd<D: Dictionary, RR, RW> {
     Read(u8, D::Index, RR),
-    Write(u8, D::Index, D::Object, RW)
+    Write(u8, D::Index, D::Object, RW),
 }
 
 /// Represents an event in the raw CAN interface.
@@ -69,7 +69,8 @@ pub struct ClientCtx<C, D, RR, RW> {
     physical: C,
 }
 
-impl<D: Dictionary, RR: Responder<D::Object>, RW: Responder<()>, C: CANInterface<D, RR, RW>> ClientCtx<C, D, RR, RW>
+impl<D: Dictionary, RR: Responder<D::Object>, RW: Responder<()>, C: CANInterface<D, RR, RW>>
+    ClientCtx<C, D, RR, RW>
 where
     D::Index: TryFrom<Index> + Into<Index>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf + Clone,
