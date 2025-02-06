@@ -12,7 +12,7 @@ use crate::sdo::*;
 
 pub enum ClientCmd<D: Dictionary, RR, RW> {
     Read(u8, D::Index, RR),
-    Write(u8, D::Index, D::Object, RW)
+    Write(u8, D::Index, RW)
 }
 
 /// Represents an event in the raw CAN interface.
@@ -106,10 +106,10 @@ where
                 }
             }
 
-            ClientCmd::Write(node, index, obj, resp) => {
+            ClientCmd::Write(node, index, resp) => {
                 if let Some(st) = self.interface.sdo.observe() {
                     if st.is_ready() {
-                        
+                        let obj = self.interface.dictionary.get_ref(&index);
                         self.interface.sdo.write(index.into(), obj, resp);
                         if let Some(ClientOutput::Output(out)) = self.interface.sdo.observe() {
                             self.handle_sdo_request::<E>(node, out).await?;

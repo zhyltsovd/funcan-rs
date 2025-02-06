@@ -62,6 +62,7 @@ pub trait Dictionary {
 
     fn set(self: &mut Self, x: Self::Object);
     fn get(self: &Self, ix: Self::Index) -> Self::Object;
+    fn get_ref(self: &Self, ix: &Self::Index) -> &Self::Object;
 }
 
 #[cfg(test)]

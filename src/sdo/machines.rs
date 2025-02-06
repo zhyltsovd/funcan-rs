@@ -78,7 +78,7 @@ impl<RR, RW> ClientMachine<RR, RW> {
         self.state = ClientState::InitUpload;
     }
 
-    pub fn write<T>(self: &mut Self, index: Index, t: T, r: RW)
+    pub fn write<T>(self: &mut Self, index: Index, t: &T, r: RW)
     where
         T: IntoBuf
     {
