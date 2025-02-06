@@ -71,7 +71,7 @@ pub struct ClientCtx<C, D, R> {
 impl<D: Dictionary, R: Responder<D::Object>, C: CANInterface<D, R>> ClientCtx<C, D, R>
 where
     D::Index: TryFrom<Index> + Into<Index>,
-    D::Object: for<'a> TryFrom<(Index, &'a [u8])> + Clone,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + Clone,
 {
     pub fn new(config: ClientConfig<C, D>) -> Self {
         let interface = ClientInterface {
@@ -123,11 +123,12 @@ where
     #[inline]
     fn handle_sdo_result<E>(self: &mut Self, r: ClientResult<R>) -> Result<(), E>
     where
-        E: for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+        E: From<<D::Index as TryFrom<Index>>::Error> + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
-                let x = D::Object::try_from((ix, &data[0..len]))?;
+                let index = D::Index::try_from(ix)?;
+                let x = D::Object::try_from((index, &data[0..len]))?;
                 self.interface.dictionary.set(x.clone());
                 if let Some(r) = maybe_r {
                     let _ = r.respond(x);
@@ -159,7 +160,8 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>
             + From<SdoError>
-            + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+            + From<<D::Index as TryFrom<Index>>::Error> 
+            + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         let response = ServerResponse::try_from(data)?;
 
@@ -200,7 +202,8 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>
             + From<SdoError>
-            + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+            + From<<D::Index as TryFrom<Index>>::Error> 
+            + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         match cmd {
             NodeCmd::Emergency => {}
@@ -227,7 +230,8 @@ where
     where
         E: From<<C as CANInterface<D, R>>::Error>
             + From<SdoError>
-            + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+            + From<<D::Index as TryFrom<Index>>::Error>
+            + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         let fun_code: FunCode = FunCode::from(frame.can_cobid);
 
@@ -240,8 +244,9 @@ where
     pub async fn run<E>(mut self: Self) -> Result<(), E>
     where
         E: From<<C as CANInterface<D, R>>::Error>
+            + From<<D::Index as TryFrom<Index>>::Error>
             + From<SdoError>
-            + for<'a> From<<D::Object as TryFrom<(Index, &'a [u8])>>::Error>,
+            + for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
     {
         loop {
             let event = self.physical.wait_can_event().await?;
