@@ -4,6 +4,10 @@ pub trait DictionaryValue<D: Dictionary>: TryFrom<D::Object> {
     fn index() -> D::Index;
 }
 
+pub trait IntoBuf {
+    fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
     pub index: u16,

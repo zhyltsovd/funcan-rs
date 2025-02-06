@@ -27,28 +27,29 @@ enum ClientState {
     ErrorState(Error),
 }
 
-pub struct ClientMachine<R> {
+pub struct ClientMachine<RR, RW> {
     index: Index,
     state: ClientState,
     data_index: usize,
-    read_responder: Option<R>,
+    read_responder: Option<RR>,
+    write_responder: Option<RW>,
     data: [u8; 1024],
 }
 
-pub enum ClientResult<R> {
-    UploadCompleted(Index, [u8; 1024], usize, Option<R>),
-    DownloadCompleted,
+pub enum ClientResult<RR, RW> {
+    UploadCompleted(Index, [u8; 1024], usize, Option<RR>),
+    DownloadCompleted(Option<RW>),
     TransferAborted(AbortCode),
 }
 
-pub enum ClientOutput<R> {
+pub enum ClientOutput<RR, RW> {
     Output(ClientRequest),
-    Done(ClientResult<R>),
+    Done(ClientResult<RR, RW>),
     Error(Error),
     Ready,
 }
 
-impl<R> ClientOutput<R> {
+impl<RR, RW> ClientOutput<RR, RW> {
     pub fn is_ready(self: &Self) -> bool {
         match self {
             ClientOutput::Output(_) => false,
@@ -57,10 +58,11 @@ impl<R> ClientOutput<R> {
     }
 }
 
-impl<R> Default for ClientMachine<R> {
+impl<RR, RW> Default for ClientMachine<RR, RW> {
     fn default() -> Self {
         ClientMachine {
             read_responder: None,
+            write_responder: None,
             index: Index::new(0, 0),
             state: ClientState::Idle,
             data_index: 0,
@@ -69,16 +71,30 @@ impl<R> Default for ClientMachine<R> {
     }
 }
 
-impl<R> ClientMachine<R> {
-    pub fn read(self: &mut Self, index: Index, r: R) {
+impl<RR, RW> ClientMachine<RR, RW> {
+    pub fn read(self: &mut Self, index: Index, r: RR) {
         self.index = index;
         self.read_responder = Some(r);
         self.state = ClientState::InitUpload;
     }
+
+    pub fn write<T>(self: &mut Self, index: Index, t: T, r: RW)
+    where
+        T: IntoBuf
+    {
+        self.index = index;
+        let n = t.into_buf(&mut self.data);
+        self.write_responder = Some(r);
+        if n <= 4 {
+            self.state = ClientState::InitSingleDownload(n);
+        } else {
+            self.state = ClientState::InitMultipleDownload(n);
+        };
+    }
 }
 
-impl<R> MachineTrans<ServerResponse> for ClientMachine<R> {
-    type Observation = Option<ClientOutput<R>>;
+impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
+    type Observation = Option<ClientOutput<RR, RW>>;
 
     fn initial(self: &mut Self) {
         self.state = ClientState::Idle;
@@ -246,7 +262,8 @@ impl<R> MachineTrans<ServerResponse> for ClientMachine<R> {
             }
 
             ClientState::DownloadCompleted => {
-                Some(ClientOutput::Done(ClientResult::DownloadCompleted))
+                let resp = core::mem::replace(&mut self.write_responder, None);
+                Some(ClientOutput::Done(ClientResult::DownloadCompleted(resp)))
             }
 
             ClientState::ErrorState(err) => Some(ClientOutput::Error(err.clone())),
