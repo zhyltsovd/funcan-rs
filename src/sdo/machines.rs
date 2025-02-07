@@ -278,8 +278,6 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
     }
 }
 
-/*
-
 /// Server states
 enum ServerState {
     Idle,
@@ -416,12 +414,12 @@ impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
                     if new_position > self.download_length {
                         self.state = ServerState::ErrorState(Error::BufferOverflow);
                     } else {
-                        self.download_data[position..new_position].copy_from_slice(&data[0..data_len]);
+                        self.download_data[*position..new_position].copy_from_slice(&data[0..data_len]);
                         self.download_position = new_position;
                         self.state = if end {
                             ServerState::Idle
                         } else {
-                            ServerState::DownloadingMultipleSegments(!expected_toggle, new_position)
+                            ServerState::DownloadingMultipleSegments(!*expected_toggle, new_position)
                         };
                     }
                 }
@@ -481,5 +479,3 @@ impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
         }
     }
 }
-
-*/
