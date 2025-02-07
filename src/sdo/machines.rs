@@ -2,10 +2,6 @@
 use crate::machine::*;
 use crate::sdo::*;
 
-Below is the Rust implementation of finite state machine that handles client-side CANopen SDO protocol communication (object dictionary read and write). It is high level machine, it uses `ServerResponse` as inputs and outputs `ClientRequest` when necessary. I want you to make a dual types for server-side SDO Communion. You should define ServerMachine and implement MachineTrans<ClientRequest> for ServerMachine dualizing client definition so they could successfully communicate. I am working in no-std setting so do not use anything heap-related, use static know-size thing.
-  
-
-
 #[derive(Debug, PartialEq, Clone)]
 pub enum ClientRequest {
     InitUpload(Index),
@@ -16,7 +12,6 @@ pub enum ClientRequest {
     AbortTransfer(Index, AbortCode),
 }
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerResponse {
     UploadSingleSegment(Index, u8, [u8; 4]),
@@ -26,7 +21,6 @@ pub enum ServerResponse {
     DownloadSegmentAck(ToggleBit),
 }
 
-    
 /// Possible errors during SDO communications
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -302,7 +296,6 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
         }
     }
 }
-
 
 /*
 
