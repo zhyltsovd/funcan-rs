@@ -479,3 +479,17 @@ impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
         }
     }
 }
+
+/*
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_write_to_slice() {
+    }
+
+}
+
+*/

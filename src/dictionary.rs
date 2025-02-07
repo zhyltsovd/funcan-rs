@@ -69,7 +69,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[test]
     fn test_index_write_to_slice() {
         let index = Index {
             index: 0x1234,

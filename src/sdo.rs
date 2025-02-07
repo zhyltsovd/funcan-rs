@@ -451,7 +451,7 @@ mod tests {
 
     #[test]
     fn client_upload_segment() {
-        let req = ClientRequest::UploadSegment;
+        let req = ClientRequest::UploadSegment(ToggleBit(false));
         let req_buf: [u8; 8] = req.clone().into();
 
         let expected_buf: [u8; 8] = [0x60, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
