@@ -2,25 +2,6 @@
 use crate::machine::*;
 use crate::sdo::*;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum ClientRequest {
-    InitUpload(Index),
-    UploadSegment(ToggleBit),
-    InitSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
-    InitMultipleDownload(Index, u32),              // index and length,
-    DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
-    AbortTransfer(Index, AbortCode),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ServerResponse {
-    UploadSingleSegment(Index, u8, [u8; 4]),
-    UploadInitMultiples(Index, u32),
-    UploadMultiples(ToggleBit, bool, u8, [u8; 7]),
-    DownloadInitAck(Index),
-    DownloadSegmentAck(ToggleBit),
-}
-
 /// Possible errors during SDO communications
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -500,4 +481,5 @@ impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
         }
     }
 }
+
 */
