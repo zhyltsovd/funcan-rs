@@ -281,6 +281,7 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
 /// Server states
 enum ServerState {
     Idle,
+    AwaitingData(bool),
     UploadingSingleSegment,
     UploadingMultipleSegments {
         response_toggle: ToggleBit,
@@ -303,6 +304,28 @@ pub struct ServerMachine {
     download_position: usize,
 }
 
+impl ServerMachine {
+    fn upload_data(self: &mut Self, data: &[u8]) {
+        if let ServerState::AwaitingData(b) = self.state {
+            
+            let n = data.len();
+            self.upload_length = n;
+            self.upload_data[0 .. n].copy_from_slice(data);
+
+            if b {
+                self.state = ServerState::UploadingSingleSegment;
+            } else {
+                self.state = ServerState::UploadingMultipleSegments {
+                    response_toggle: ToggleBit(false),
+                    expected_next_toggle: ToggleBit(true),
+                    position: 0,
+                };
+            }
+                
+        }
+    }
+}
+
 /// Possible final result that server produces
 pub enum ServerResult {
     UploadCompleted,
@@ -313,6 +336,7 @@ pub enum ServerResult {
 /// All observations of server machine
 pub enum ServerOutput {
     Output(ServerResponse),
+    AwaitingData(Index),
     Done(ServerResult),
     Error(Error),
     Ready,
@@ -344,15 +368,8 @@ impl MachineTrans<ClientRequest> for ServerMachine {
         match (&self.state, request) {
             (ServerState::Idle, ClientRequest::InitUpload(index)) => {
                 self.index = index;
-                if self.upload_length <= 4 {
-                    self.state = ServerState::UploadingSingleSegment;
-                } else {
-                    self.state = ServerState::UploadingMultipleSegments {
-                        response_toggle: ToggleBit(false),
-                        expected_next_toggle: ToggleBit(true),
-                        position: 0,
-                    };
-                }
+                let b = self.upload_length <= 4; 
+                self.state = ServerState::AwaitingData(b);         
             }
 
             (
@@ -431,6 +448,8 @@ impl MachineTrans<ClientRequest> for ServerMachine {
         match &self.state {
             ServerState::Idle => Some(ServerOutput::Ready),
 
+            ServerState::AwaitingData(_) => Some(ServerOutput::AwaitingData(self.index)),
+            
             ServerState::UploadingSingleSegment => {
                 let mut data = [0; 4];
                 data[0..self.upload_length].copy_from_slice(&self.upload_data[0..self.upload_length]);
@@ -476,16 +495,92 @@ impl MachineTrans<ClientRequest> for ServerMachine {
     }
 }
 
-/*
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_index_write_to_slice() {
-    }
+    fn sdo_upload_u32_value() {
+        let mut client: ClientMachine<(), ()> = ClientMachine::default();
+        let mut server = ServerMachine::default();
+        let index = Index::new(0x6068, 0x00);
+        let value: u32 = 5000;
+        
+        let fake_responder = ();
 
+        client.read(index, fake_responder);
+        
+        let mut gasoline = 10;
+        
+        while gasoline > 0 {
+
+            let client_out = client.observe().unwrap();
+            match client_out {
+                ClientOutput::Output(req) => {
+                    server.transit(req);
+                    let server_out = server.observe().unwrap();
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client.transit(resp);
+                        },
+                        ServerOutput::AwaitingData(sindex) => {
+                            if sindex == index {
+                                let data: [u8; 4] = value.to_le_bytes();
+                                server.upload_data(&data);
+                                if let Some(ServerOutput::Output(resp)) = server.observe() {
+                                    client.transit(resp);
+                                } else {
+                                    panic!("Server state mismatch");
+                                }
+                            } else {
+                                panic!("Index mismatch");
+                            }
+                        },
+                        
+                        ServerOutput::Done(res) => {
+                            
+                        },
+                        
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        },
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        },
+                    }
+                    
+                }
+
+                ClientOutput::Done(res) => {
+                    match res {
+                        ClientResult::UploadCompleted(i, data, n, _) => {
+                            assert_eq!(n, 4);
+                            let uploaded_value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                            assert_eq!(uploaded_value, value);
+                            break;
+                        }
+
+                        _ => panic!("Wrong result!"),
+                    }
+                }
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+                
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+            
+            gasoline = gasoline - 1;
+        };
+        
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }
 }
 
-*/
