@@ -8,6 +8,16 @@ pub trait IntoBuf {
     fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize;
 }
 
+impl IntoBuf for u32 {
+    fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize {
+        let data = self.to_le_bytes();
+        let n = data.len();
+        assert!(buf.len() >= n);
+        buf[0 .. n].copy_from_slice(&data);
+        n
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Index {
     pub index: u16,

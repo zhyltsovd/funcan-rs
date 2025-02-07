@@ -582,5 +582,84 @@ mod tests {
             panic!("SDO exchange is stuck!");
         }
     }
+
+    #[test]
+    fn sdo_download_u32_value() {
+        let mut client: ClientMachine<(), ()> = ClientMachine::default();
+        let mut server = ServerMachine::default();
+        let index = Index::new(0x6068, 0x00);
+        let value: u32 = 5000;
+        
+        let fake_responder = ();
+
+        client.write(index, value, fake_responder);
+        
+        let mut gasoline = 10;
+        
+        while gasoline > 0 {
+
+            let client_out = client.observe().unwrap();
+            match client_out {
+                ClientOutput::Output(req) => {
+                    server.transit(req);
+                    let server_out = server.observe().unwrap();
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client.transit(resp);
+                        },
+                        ServerOutput::AwaitingData(_) => {
+                            panic!("State mismatch");
+                        },
+                        
+                        ServerOutput::Done(res) => {
+                            if let ServerResult::DownloadCompleted(dindex, data, n) = res {
+                                assert_eq!(index, dindex);
+                                assert_eq!(n, 4);
+                                let downloaded_value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                                assert_eq!(downloaded_value, value);
+
+                            } else {
+                                panic!("Wrong result");
+                            }
+                        },
+                        
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        },
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        },
+                    }
+                    
+                }
+
+                ClientOutput::Done(res) => {
+                    match res {
+                        ClientResult::DownloadCompleted(_) => {
+                            break;
+                        }
+
+                        _ => panic!("Wrong result!"),
+                    }
+                }
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+                
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+            
+            gasoline = gasoline - 1;
+        };
+        
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }
 }
 
