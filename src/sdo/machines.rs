@@ -307,10 +307,9 @@ pub struct ServerMachine {
 impl ServerMachine {
     fn upload_data(self: &mut Self, data: &[u8]) {
         if let ServerState::AwaitingData(b) = self.state {
-            
             let n = data.len();
             self.upload_length = n;
-            self.upload_data[0 .. n].copy_from_slice(data);
+            self.upload_data[0..n].copy_from_slice(data);
 
             if b {
                 self.state = ServerState::UploadingSingleSegment;
@@ -321,7 +320,6 @@ impl ServerMachine {
                     position: 0,
                 };
             }
-                
         }
     }
 }
@@ -368,8 +366,8 @@ impl MachineTrans<ClientRequest> for ServerMachine {
         match (&self.state, request) {
             (ServerState::Idle, ClientRequest::InitUpload(index)) => {
                 self.index = index;
-                let b = self.upload_length <= 4; 
-                self.state = ServerState::AwaitingData(b);         
+                let b = self.upload_length <= 4;
+                self.state = ServerState::AwaitingData(b);
             }
 
             (
@@ -427,12 +425,16 @@ impl MachineTrans<ClientRequest> for ServerMachine {
                     if new_position > self.download_length {
                         self.state = ServerState::ErrorState(Error::BufferOverflow);
                     } else {
-                        self.download_data[*position..new_position].copy_from_slice(&data[0..data_len]);
+                        self.download_data[*position..new_position]
+                            .copy_from_slice(&data[0..data_len]);
                         self.download_position = new_position;
                         self.state = if end {
                             ServerState::Idle
                         } else {
-                            ServerState::DownloadingMultipleSegments(!*expected_toggle, new_position)
+                            ServerState::DownloadingMultipleSegments(
+                                !*expected_toggle,
+                                new_position,
+                            )
                         };
                     }
                 }
@@ -449,11 +451,13 @@ impl MachineTrans<ClientRequest> for ServerMachine {
             ServerState::Idle => Some(ServerOutput::Ready),
 
             ServerState::AwaitingData(_) => Some(ServerOutput::AwaitingData(self.index)),
-            
+
             ServerState::UploadingSingleSegment => {
                 let mut data = [0; 4];
-                data[0..self.upload_length].copy_from_slice(&self.upload_data[0..self.upload_length]);
-                let response = ServerResponse::UploadSingleSegment(self.index, self.upload_length as u8, data);
+                data[0..self.upload_length]
+                    .copy_from_slice(&self.upload_data[0..self.upload_length]);
+                let response =
+                    ServerResponse::UploadSingleSegment(self.index, self.upload_length as u8, data);
                 self.state = ServerState::Idle;
                 Some(ServerOutput::Output(response))
             }
@@ -467,8 +471,10 @@ impl MachineTrans<ClientRequest> for ServerMachine {
                 let data_len = remaining.min(7);
                 let end = remaining <= 7;
                 let mut data = [0; 7];
-                data[0..data_len].copy_from_slice(&self.upload_data[*position..position + data_len]);
-                let response = ServerResponse::UploadMultiples(*response_toggle, end, data_len as u8, data);
+                data[0..data_len]
+                    .copy_from_slice(&self.upload_data[*position..position + data_len]);
+                let response =
+                    ServerResponse::UploadMultiples(*response_toggle, end, data_len as u8, data);
                 if end {
                     self.state = ServerState::Idle;
                 }
@@ -505,15 +511,14 @@ mod tests {
         let mut server = ServerMachine::default();
         let index = Index::new(0x6068, 0x00);
         let value: u32 = 5000;
-        
+
         let fake_responder = ();
 
         client.read(index, fake_responder);
-        
-        let mut gasoline = 10;
-        
-        while gasoline > 0 {
 
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
             let client_out = client.observe().unwrap();
             match client_out {
                 ClientOutput::Output(req) => {
@@ -523,7 +528,7 @@ mod tests {
                     match server_out {
                         ServerOutput::Output(resp) => {
                             client.transit(resp);
-                        },
+                        }
                         ServerOutput::AwaitingData(sindex) => {
                             if sindex == index {
                                 let data: [u8; 4] = value.to_le_bytes();
@@ -536,48 +541,44 @@ mod tests {
                             } else {
                                 panic!("Index mismatch");
                             }
-                        },
-                        
-                        ServerOutput::Done(res) => {
-                            
-                        },
-                        
+                        }
+
+                        ServerOutput::Done(res) => {}
+
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
-                        },
+                        }
 
                         ServerOutput::Ready => {
                             panic!("Server failed to start working");
-                        },
-                    }
-                    
-                }
-
-                ClientOutput::Done(res) => {
-                    match res {
-                        ClientResult::UploadCompleted(i, data, n, _) => {
-                            assert_eq!(n, 4);
-                            let uploaded_value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-                            assert_eq!(uploaded_value, value);
-                            break;
                         }
-
-                        _ => panic!("Wrong result!"),
                     }
                 }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::UploadCompleted(i, data, n, _) => {
+                        assert_eq!(n, 4);
+                        let uploaded_value =
+                            u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                        assert_eq!(uploaded_value, value);
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
                 }
-                
+
                 ClientOutput::Ready => {
                     panic!("Client failed to start working");
                 }
             }
-            
+
             gasoline = gasoline - 1;
-        };
-        
+        }
+
         if gasoline == 0 {
             panic!("SDO exchange is stuck!");
         }
@@ -589,15 +590,14 @@ mod tests {
         let mut server = ServerMachine::default();
         let index = Index::new(0x6068, 0x00);
         let value: u32 = 5000;
-        
+
         let fake_responder = ();
 
         client.write(index, value, fake_responder);
-        
-        let mut gasoline = 10;
-        
-        while gasoline > 0 {
 
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
             let client_out = client.observe().unwrap();
             match client_out {
                 ClientOutput::Output(req) => {
@@ -607,59 +607,55 @@ mod tests {
                     match server_out {
                         ServerOutput::Output(resp) => {
                             client.transit(resp);
-                        },
+                        }
                         ServerOutput::AwaitingData(_) => {
                             panic!("State mismatch");
-                        },
-                        
+                        }
+
                         ServerOutput::Done(res) => {
                             if let ServerResult::DownloadCompleted(dindex, data, n) = res {
                                 assert_eq!(index, dindex);
                                 assert_eq!(n, 4);
-                                let downloaded_value = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                                let downloaded_value =
+                                    u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
                                 assert_eq!(downloaded_value, value);
-
                             } else {
                                 panic!("Wrong result");
                             }
-                        },
-                        
+                        }
+
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
-                        },
+                        }
 
                         ServerOutput::Ready => {
                             panic!("Server failed to start working");
-                        },
-                    }
-                    
-                }
-
-                ClientOutput::Done(res) => {
-                    match res {
-                        ClientResult::DownloadCompleted(_) => {
-                            break;
                         }
-
-                        _ => panic!("Wrong result!"),
                     }
                 }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::DownloadCompleted(_) => {
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
                 }
-                
+
                 ClientOutput::Ready => {
                     panic!("Client failed to start working");
                 }
             }
-            
+
             gasoline = gasoline - 1;
-        };
-        
+        }
+
         if gasoline == 0 {
             panic!("SDO exchange is stuck!");
         }
     }
 }
-

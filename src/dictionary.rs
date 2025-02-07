@@ -13,7 +13,7 @@ impl IntoBuf for u32 {
         let data = self.to_le_bytes();
         let n = data.len();
         assert!(buf.len() >= n);
-        buf[0 .. n].copy_from_slice(&data);
+        buf[0..n].copy_from_slice(&data);
         n
     }
 }
