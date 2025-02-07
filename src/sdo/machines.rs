@@ -293,7 +293,7 @@ enum ServerState {
 }
 
 /// Server context
-pub struct ServerMachine<RR, RW> {
+pub struct ServerMachine {
     index: Index,
     state: ServerState,
     upload_data: [u8; 1024],
@@ -301,26 +301,24 @@ pub struct ServerMachine<RR, RW> {
     download_data: [u8; 1024],
     download_length: usize,
     download_position: usize,
-    read_responder: Option<RR>,
-    write_responder: Option<RW>,
 }
 
 /// Possible final result that server produces
-pub enum ServerResult<RR, RW> {
-    UploadCompleted(Option<RR>),
-    DownloadCompleted(Index, [u8; 1024], usize, Option<RW>),
+pub enum ServerResult {
+    UploadCompleted,
+    DownloadCompleted(Index, [u8; 1024], usize),
     TransferAborted(AbortCode),
 }
 
 /// All observations of server machine
-pub enum ServerOutput<RR, RW> {
+pub enum ServerOutput {
     Output(ServerResponse),
-    Done(ServerResult<RR, RW>),
+    Done(ServerResult),
     Error(Error),
     Ready,
 }
 
-impl<RR, RW> Default for ServerMachine<RR, RW> {
+impl Default for ServerMachine {
     fn default() -> Self {
         ServerMachine {
             index: Index::new(0, 0),
@@ -330,14 +328,12 @@ impl<RR, RW> Default for ServerMachine<RR, RW> {
             download_data: [0; 1024],
             download_length: 0,
             download_position: 0,
-            read_responder: None,
-            write_responder: None,
         }
     }
 }
 
-impl<RR, RW> MachineTrans<ClientRequest> for ServerMachine<RR, RW> {
-    type Observation = Option<ServerOutput<RR, RW>>;
+impl MachineTrans<ClientRequest> for ServerMachine {
+    type Observation = Option<ServerOutput>;
 
     fn initial(&mut self) {
         self.state = ServerState::Idle;
