@@ -31,9 +31,8 @@ For further information, questions, or suggestions, feel free to reach out to me
     - [ ] Implement SYNC producer
     - [ ] Implement SYNC consumer
   - [ ] SDO transfers
-    - [ ] Define SDO client behavior
+    - [x] Define SDO client behavior
     - [ ] Define SDO server behavior
-    - [ ] Ensure segmented and expedited transfers
   - [ ] PDO transfers
     - [ ] Implement static PDO mapping
     - [ ] Implement dynamic PDO mapping
