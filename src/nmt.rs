@@ -1,6 +1,7 @@
 use core::time::Duration;
 use heapless::index_map::FnvIndexMap;
 
+use crate::machine::*;
 use crate::interfaces::ClockInstant;
 
 /// The possible NMT states of a node.
@@ -35,11 +36,15 @@ pub struct NmtCommand {
     pub target: NodeTarget,
 }
 
+enum NmtMasterState {
+    Idle,
+    Execute(NmtCommand),
+    Error(NmtError)
+}
+
 /// Events fed into the state machine.
 #[derive(Debug)]
 pub enum NmtEvent {
-    /// A user‐ or timer‐driven request to change state.
-    Command(NmtCommand),
     /// A (decoded) NMT response from a node: "I am now in this state".
     Response { node_id: u8, new_state: NmtState },
     /// A periodic tick for timeout checking.
@@ -47,10 +52,17 @@ pub enum NmtEvent {
 }
 
 /// Errors the NMT master can encounter.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum NmtError {
     Timeout { node_id: u8 },
     UnexpectedResponse { node_id: u8, state: NmtState },
+}
+
+#[derive(Debug)]
+pub enum NmtOutput {
+    Ready,
+    Command(NmtCommand),
+    Error(NmtError),
 }
 
 // ============= Pending Request Tracker =============
@@ -69,5 +81,61 @@ pub struct NmtMaster<const N: usize, I: ClockInstant> {
     /// Configuration
     timeout: Duration,
     max_retries: u8,
+    /// State
+    state: NmtMasterState,
 }
 
+impl<const N: usize, I> NmtMaster<N, I>
+where
+    I: ClockInstant {
+    pub fn new<Nodes: IntoIterator<Item=u8>>(nodes: Nodes) -> Self {
+        let node_states = nodes.into_iter()
+            .map(|id| (id, NmtState::Initialization))
+            .collect();
+        NmtMaster {
+            state: NmtMasterState::Idle,
+            node_states,
+            pendings: FnvIndexMap::new(),
+            timeout: Duration::from_millis(500),
+            max_retries: 3,
+        }
+    }
+}
+
+impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMaster<N, I>
+where
+    I: ClockInstant {
+    type Observation = NmtOutput;
+    
+    fn initial(self: &mut Self) {
+        self.state = NmtMasterState::Idle;
+        // self.pendings.clear()
+    }
+
+    fn transit(self: &mut Self, response: NmtEvent) {
+        match (&self.state, response) {
+            (NmtMasterState::Execute(cmd), NmtEvent::Response {node_id, new_state}) => {
+                todo!()
+            }
+
+            (_, NmtEvent::Tick) => {
+                todo!()
+            }
+
+            (s, r) => {
+                let e = todo!();
+                self.state = NmtMasterState::Error(e)
+            }
+            
+        }
+    }
+
+    fn observe(&mut self) -> Self::Observation {
+        match &self.state {
+            NmtMasterState::Idle => NmtOutput::Ready,
+            NmtMasterState::Execute(cmd) => NmtOutput::Command(*cmd),
+            NmtMasterState::Error(e) => NmtOutput::Error(*e),
+        }
+    }
+
+}
