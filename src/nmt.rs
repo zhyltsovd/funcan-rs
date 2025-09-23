@@ -1,5 +1,6 @@
 use core::time::Duration;
 use heapless::index_map::FnvIndexMap;
+use heapless::vec::Vec;
 
 use crate::machine::*;
 use crate::interfaces::ClockInstant;
@@ -36,10 +37,28 @@ pub struct NmtCommand {
     pub target: NodeTarget,
 }
 
+#[derive(Debug, Copy, Clone)]
 enum NmtMasterState {
     Idle,
     Execute(NmtCommand),
     Error(NmtError)
+}
+
+#[derive(Debug, Copy, Clone)]
+enum NmtMasterStateTag {
+    Idle,
+    Execute,
+    Error
+}
+
+impl From<NmtMasterState> for NmtMasterStateTag {
+    fn from(state: NmtMasterState) -> Self {
+        match state {
+            NmtMasterState::Idle => NmtMasterStateTag::Idle,
+            NmtMasterState::Execute(_) => NmtMasterStateTag::Execute,
+            NmtMasterState::Error(_) => NmtMasterStateTag::Error,
+        }
+    }
 }
 
 /// Events fed into the state machine.
@@ -55,7 +74,8 @@ pub enum NmtEvent {
 #[derive(Debug, Clone, Copy)]
 pub enum NmtError {
     Timeout { node_id: u8 },
-    UnexpectedResponse { node_id: u8, state: NmtState },
+    StateMismatch { node_id: u8, node_state: NmtState, expected_state: NmtState },
+    ResponseMismatch { master_state: NmtMasterStateTag, node_id: u8, node_state: NmtState }
 }
 
 #[derive(Debug)]
@@ -100,6 +120,64 @@ where
             max_retries: 3,
         }
     }
+
+    fn handle_response(self: &mut Self, cmd: &NmtControlCommand, new_state: NmtState) -> Option<NmtError> {   
+        let expected = match cmd {
+            NmtControlCommand::Start => NmtState::Operational,
+            NmtControlCommand::Stop => NmtState::Stopped,
+            NmtControlCommand::ResetNode => NmtState::Initialization,
+            NmtControlCommand::ResetCommunication => NmtState::PreOperational,
+        };
+        
+        todo!()
+    }
+
+
+    fn handle_tick(self: &mut Self) {
+        let now = I::now();
+        let timeout = self.timeout;
+        let max_retries = self.max_retries;
+        
+        // collect timed-out nodes
+        let timed_out: Vec<u8, N> = self.pendings.iter()
+            .filter_map(|(&node_id, pend)| {
+                if now.duration_since(&pend.sent_at) >= timeout {
+                    Some(node_id)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        for node_id in timed_out {
+            if let Some(mut pend) = self.pendings.remove(&node_id) {
+                if pend.retries < max_retries {
+                    // retry
+                    let target = NodeTarget::Node(node_id);
+                    
+                    let cmd = match pend.expected {
+                        NmtState::Operational => NmtControlCommand::Start,
+                        NmtState::Stopped => NmtControlCommand::Stop,
+                        NmtState::Initialization => NmtControlCommand::ResetNode,
+                        NmtState::PreOperational => NmtControlCommand::ResetCommunication,
+                    };
+                    
+                    pend.sent_at = I::now();
+                    pend.retries += 1;
+                    self.pendings.insert(node_id, pend);
+                    
+                    let x = NmtCommand {cmd, target};
+                    self.state = NmtMasterState::Execute(x);
+                } else {
+                    // permanent timeout
+                    // eprintln!("Error: NMT timeout on node {}", node_id);
+                    // drop this pending and notify user or log
+                    let err = NmtError::Timeout { node_id };
+                    self.state = NmtMasterState::Error(err);
+                }
+            }
+        }
+    }
 }
 
 impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMaster<N, I>
@@ -114,17 +192,26 @@ where
 
     fn transit(self: &mut Self, response: NmtEvent) {
         match (&self.state, response) {
+
+            (NmtMasterState::Idle, NmtEvent::Tick) => {
+                self.handle_tick();
+            }
+
+            (_, NmtEvent::Tick) => {
+                // do nothing
+            }
+            
             (NmtMasterState::Execute(cmd), NmtEvent::Response {node_id, new_state}) => {
                 todo!()
             }
 
-            (_, NmtEvent::Tick) => {
-                todo!()
-            }
-
-            (s, r) => {
+            (NmtMasterState::Idle, NmtEvent::Response {node_id, new_state}) => {
                 let e = todo!();
                 self.state = NmtMasterState::Error(e)
+            }
+
+            (NmtMasterState::Error(_e), _) => {
+                // do nothing? 
             }
             
         }
