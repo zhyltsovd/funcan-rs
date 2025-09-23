@@ -153,7 +153,6 @@ where
         });
     }
     
-    
     fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
             NmtControlCommand::Start => NmtState::Operational,
@@ -161,10 +160,24 @@ where
             NmtControlCommand::ResetNode => NmtState::Initialization,
             NmtControlCommand::ResetCommunication => NmtState::PreOperational,
         };
-        
-        todo!()
-    }
 
+        if new_state == expected {
+            // success!  back to idle
+            self.state = NmtMasterState::Idle;
+        } else {
+            // wrong state came back
+            self.state = NmtMasterState::Error(
+                NmtError::StateMismatch {
+                    node_id,
+                    node_state: new_state,
+                    expected_state: expected,
+                }
+            );
+        };
+
+        self.node_states.insert(node_id, new_state);
+    }
+    
 
     fn handle_tick(self: &mut Self) {
         let now = I::now();
