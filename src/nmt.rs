@@ -108,7 +108,7 @@ pub struct NmtMaster<const N: usize, I: ClockInstant> {
 impl<const N: usize, I> NmtMaster<N, I>
 where
     I: ClockInstant {
-    pub fn new<Nodes: IntoIterator<Item=u8>>(nodes: Nodes) -> Self {
+    pub fn new<Nodes: IntoIterator<Item=u8>>(nodes: Nodes, timeout: u64) -> Self {
         let node_states = nodes.into_iter()
             .map(|id| (id, NmtState::Initialization))
             .collect();
@@ -116,10 +116,12 @@ where
             state: NmtMasterState::Idle,
             node_states,
             pendings: FnvIndexMap::new(),
-            timeout: Duration::from_millis(500),
+            timeout: Duration::from_millis(timeout),
             max_retries: 3,
         }
     }
+
+    
 
     fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
@@ -218,7 +220,7 @@ where
             }
 
             (NmtMasterState::Idle, NmtEvent::Response {node_id, new_state}) => {
-                let e = todo!();
+                let e = NmtError::ResponseMismatch { master_state: NmtMasterStateTag::Idle, node_id: node_id, node_state: new_state };
                 self.state = NmtMasterState::Error(e)
             }
 
