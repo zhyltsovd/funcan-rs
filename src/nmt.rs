@@ -121,7 +121,7 @@ where
         }
     }
 
-    fn handle_response(self: &mut Self, cmd: &NmtControlCommand, new_state: NmtState) -> Option<NmtError> {   
+    fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
             NmtControlCommand::Start => NmtState::Operational,
             NmtControlCommand::Stop => NmtState::Stopped,
@@ -202,7 +202,19 @@ where
             }
             
             (NmtMasterState::Execute(cmd), NmtEvent::Response {node_id, new_state}) => {
-                todo!()
+                match &cmd.target {
+                    NodeTarget::Node(target_id) => {
+                        if *target_id == node_id {
+                            self.handle_response(cmd.cmd, node_id, new_state);
+                        } else {
+                            // raise error?
+                        }
+                    }
+
+                    NodeTarget::All => {
+                        self.handle_response(cmd.cmd, node_id, new_state);
+                    }
+                }
             }
 
             (NmtMasterState::Idle, NmtEvent::Response {node_id, new_state}) => {
