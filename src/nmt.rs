@@ -121,8 +121,39 @@ where
         }
     }
 
+    /// Start a single node.
+    pub fn start_node(&mut self, node_id: u8) {
+        self.state = NmtMasterState::Execute(NmtCommand {
+            cmd: NmtControlCommand::Start,
+            target: NodeTarget::Node(node_id),
+        });
+    }
     
-
+    /// Stop a single node.
+    pub fn stop_node(&mut self, node_id: u8) {
+        self.state = NmtMasterState::Execute(NmtCommand {
+            cmd: NmtControlCommand::Stop,
+            target: NodeTarget::Node(node_id),
+        });
+    }
+    
+    /// Reset communication on a single node.
+    pub fn reset_comm_node(&mut self, node_id: u8) {
+        self.state = NmtMasterState::Execute(NmtCommand {
+            cmd: NmtControlCommand::ResetCommunication,
+            target: NodeTarget::Node(node_id),
+        });
+    }
+    
+    /// Reset the application on a single node.
+    pub fn reset_node(&mut self, node_id: u8) {
+        self.state = NmtMasterState::Execute(NmtCommand {
+            cmd: NmtControlCommand::ResetNode,
+            target: NodeTarget::Node(node_id),
+        });
+    }
+    
+    
     fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
             NmtControlCommand::Start => NmtState::Operational,
