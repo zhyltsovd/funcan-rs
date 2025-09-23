@@ -4,6 +4,7 @@ use heapless::vec::Vec;
 
 use crate::machine::*;
 use crate::interfaces::ClockInstant;
+use crate::raw::*;
 
 /// The possible NMT states of a node.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -35,6 +36,38 @@ pub enum NodeTarget {
 pub struct NmtCommand {
     pub cmd: NmtControlCommand,
     pub target: NodeTarget,
+}
+impl Into<CANFrame> for NmtCommand {
+    fn into(self) -> CANFrame {
+        // Translate our high‐level command into the 1‐byte NMT command specifier
+        let specifier: u8 = match self.cmd {
+            NmtControlCommand::Start              => 0x01,
+            NmtControlCommand::Stop               => 0x02,
+            // According to CiA 301:
+            // 0x80 = enter pre‐operational (not used here)
+            // 0x81 = reset node
+            // 0x82 = reset communication
+            NmtControlCommand::ResetNode          => 0x81,
+            NmtControlCommand::ResetCommunication => 0x82,
+        };
+
+        // Target node‐ID: 0 = all nodes, otherwise 1..127
+        let node_id_byte: u8 = match self.target {
+            NodeTarget::All    => 0,
+            NodeTarget::Node(n) => n,
+        };
+
+        // Build the 8‐byte CAN frame (only first two bytes are used)
+        let mut data = [0u8; 8];
+        data[0] = specifier;
+        data[1] = node_id_byte;
+
+        CANFrame {
+            can_cobid: 0x000,  // NMT uses COB‐ID = 0
+            can_len:   2,      // only 2 bytes valid
+            can_data:  data,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
