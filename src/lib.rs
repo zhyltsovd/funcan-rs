@@ -13,15 +13,11 @@ pub mod machine;
 pub mod raw;
 /// Common SDO types and functions
 pub mod sdo;
-
 /// Abstract interfaces
 pub mod interfaces;
-
 /// CANOpen cobid
 pub mod cobid;
-
-/// CANOpen client interface
-pub mod client;
-
 /// CANOpen network management
 pub mod nmt;
+/// CANOpen dispatcher
+pub mod dispatcher;
