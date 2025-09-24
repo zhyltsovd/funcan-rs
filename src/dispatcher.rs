@@ -12,7 +12,7 @@ pub trait Configurable {
     fn configure(&mut self, config: Self::Config);
 }
 
-pub trait CANMachine: MachineTrans<CANFrame, Observation = CANFrame> {}
+pub trait CANMachine: MachineTrans<CANFrame, Observation = Option<CANFrame>> {}
 
 pub struct Dispatcher<'a>
 {
