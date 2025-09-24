@@ -23,5 +23,5 @@ pub mod cobid;
 /// CANOpen client interface
 pub mod client;
 
-/// CANOpen network management 
+/// CANOpen network management
 pub mod nmt;

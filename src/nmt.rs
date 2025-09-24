@@ -2,8 +2,8 @@ use core::time::Duration;
 use heapless::index_map::FnvIndexMap;
 use heapless::vec::Vec;
 
-use crate::machine::*;
 use crate::interfaces::ClockInstant;
+use crate::machine::*;
 use crate::raw::*;
 
 /// The possible NMT states of a node.
@@ -42,16 +42,16 @@ impl Into<CANFrame> for NmtCommand {
     fn into(self) -> CANFrame {
         // Translate our high‐level command into the 1‐byte NMT command specifier
         let specifier: u8 = match self.cmd {
-            NmtControlCommand::Start               => 0x01,
-            NmtControlCommand::Stop                => 0x02,
+            NmtControlCommand::Start => 0x01,
+            NmtControlCommand::Stop => 0x02,
             NmtControlCommand::EnterPreOperational => 0x80,
-            NmtControlCommand::ResetNode           => 0x81,
-            NmtControlCommand::ResetCommunication  => 0x82,
+            NmtControlCommand::ResetNode => 0x81,
+            NmtControlCommand::ResetCommunication => 0x82,
         };
 
         // Target node‐ID: 0 = all nodes, otherwise 1..127
         let node_id_byte: u8 = match self.target {
-            NodeTarget::All    => 0,
+            NodeTarget::All => 0,
             NodeTarget::Node(n) => n,
         };
 
@@ -61,9 +61,9 @@ impl Into<CANFrame> for NmtCommand {
         data[1] = node_id_byte;
 
         CANFrame {
-            can_cobid: 0x000,  // NMT uses COB‐ID = 0
-            can_len:   2,      // only 2 bytes valid
-            can_data:  data,
+            can_cobid: 0x000, // NMT uses COB‐ID = 0
+            can_len: 2,       // only 2 bytes valid
+            can_data: data,
         }
     }
 }
@@ -72,14 +72,14 @@ impl Into<CANFrame> for NmtCommand {
 enum NmtMasterState {
     Idle,
     Execute(NmtCommand),
-    Error(NmtError)
+    Error(NmtError),
 }
 
 #[derive(Debug, Copy, Clone)]
 enum NmtMasterStateTag {
     Idle,
     Execute,
-    Error
+    Error,
 }
 
 impl From<NmtMasterState> for NmtMasterStateTag {
@@ -104,9 +104,19 @@ pub enum NmtEvent {
 /// Errors the NMT master can encounter.
 #[derive(Debug, Clone, Copy)]
 pub enum NmtError {
-    Timeout { node_id: u8 },
-    StateMismatch { node_id: u8, node_state: NmtState, expected_state: NmtState },
-    ResponseMismatch { master_state: NmtMasterStateTag, node_id: u8, node_state: NmtState }
+    Timeout {
+        node_id: u8,
+    },
+    StateMismatch {
+        node_id: u8,
+        node_state: NmtState,
+        expected_state: NmtState,
+    },
+    ResponseMismatch {
+        master_state: NmtMasterStateTag,
+        node_id: u8,
+        node_state: NmtState,
+    },
 }
 
 #[derive(Debug)]
@@ -138,9 +148,11 @@ pub struct NmtMaster<const N: usize, I: ClockInstant> {
 
 impl<const N: usize, I> NmtMaster<N, I>
 where
-    I: ClockInstant {
-    pub fn new<Nodes: IntoIterator<Item=u8>>(nodes: Nodes, timeout: u64) -> Self {
-        let node_states = nodes.into_iter()
+    I: ClockInstant,
+{
+    pub fn new<Nodes: IntoIterator<Item = u8>>(nodes: Nodes, timeout: u64) -> Self {
+        let node_states = nodes
+            .into_iter()
             .map(|id| (id, NmtState::Initialization))
             .collect();
         NmtMaster {
@@ -159,7 +171,7 @@ where
             target: NodeTarget::Node(node_id),
         });
     }
-    
+
     /// Stop a single node.
     pub fn stop_node(&mut self, node_id: u8) {
         self.state = NmtMasterState::Execute(NmtCommand {
@@ -168,7 +180,6 @@ where
         });
     }
 
-
     /// Reset communication on a single node.
     pub fn enter_preoperational_comm_node(&mut self, node_id: u8) {
         self.state = NmtMasterState::Execute(NmtCommand {
@@ -176,7 +187,7 @@ where
             target: NodeTarget::Node(node_id),
         });
     }
-    
+
     /// Reset communication on a single node.
     pub fn reset_comm_node(&mut self, node_id: u8) {
         self.state = NmtMasterState::Execute(NmtCommand {
@@ -184,7 +195,7 @@ where
             target: NodeTarget::Node(node_id),
         });
     }
-    
+
     /// Reset the application on a single node.
     pub fn reset_node(&mut self, node_id: u8) {
         self.state = NmtMasterState::Execute(NmtCommand {
@@ -192,7 +203,7 @@ where
             target: NodeTarget::Node(node_id),
         });
     }
-    
+
     fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
             NmtControlCommand::Start => NmtState::Operational,
@@ -207,26 +218,25 @@ where
             self.state = NmtMasterState::Idle;
         } else {
             // wrong state came back
-            self.state = NmtMasterState::Error(
-                NmtError::StateMismatch {
-                    node_id,
-                    node_state: new_state,
-                    expected_state: expected,
-                }
-            );
+            self.state = NmtMasterState::Error(NmtError::StateMismatch {
+                node_id,
+                node_state: new_state,
+                expected_state: expected,
+            });
         };
 
         self.node_states.insert(node_id, new_state);
     }
-    
 
     fn handle_tick(self: &mut Self) {
         let now = I::now();
         let timeout = self.timeout;
         let max_retries = self.max_retries;
-        
+
         // collect timed-out nodes
-        let timed_out: Vec<u8, N> = self.pendings.iter()
+        let timed_out: Vec<u8, N> = self
+            .pendings
+            .iter()
             .filter_map(|(&node_id, pend)| {
                 if now.duration_since(&pend.sent_at) >= timeout {
                     Some(node_id)
@@ -235,25 +245,25 @@ where
                 }
             })
             .collect();
-        
+
         for node_id in timed_out {
             if let Some(mut pend) = self.pendings.remove(&node_id) {
                 if pend.retries < max_retries {
                     // retry
                     let target = NodeTarget::Node(node_id);
-                    
+
                     let cmd = match pend.expected {
                         NmtState::Operational => NmtControlCommand::Start,
                         NmtState::Stopped => NmtControlCommand::Stop,
                         NmtState::Initialization => NmtControlCommand::ResetNode,
                         NmtState::PreOperational => NmtControlCommand::ResetCommunication,
                     };
-                    
+
                     pend.sent_at = I::now();
                     pend.retries += 1;
                     self.pendings.insert(node_id, pend);
-                    
-                    let x = NmtCommand {cmd, target};
+
+                    let x = NmtCommand { cmd, target };
                     self.state = NmtMasterState::Execute(x);
                 } else {
                     // permanent timeout
@@ -269,9 +279,10 @@ where
 
 impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMaster<N, I>
 where
-    I: ClockInstant {
+    I: ClockInstant,
+{
     type Observation = NmtOutput;
-    
+
     fn initial(self: &mut Self) {
         self.state = NmtMasterState::Idle;
         // self.pendings.clear()
@@ -279,7 +290,6 @@ where
 
     fn transit(self: &mut Self, response: NmtEvent) {
         match (&self.state, response) {
-
             (NmtMasterState::Idle, NmtEvent::Tick) => {
                 self.handle_tick();
             }
@@ -287,8 +297,8 @@ where
             (_, NmtEvent::Tick) => {
                 // do nothing
             }
-            
-            (NmtMasterState::Execute(cmd), NmtEvent::Response {node_id, new_state}) => {
+
+            (NmtMasterState::Execute(cmd), NmtEvent::Response { node_id, new_state }) => {
                 match &cmd.target {
                     NodeTarget::Node(target_id) => {
                         if *target_id == node_id {
@@ -304,15 +314,18 @@ where
                 }
             }
 
-            (NmtMasterState::Idle, NmtEvent::Response {node_id, new_state}) => {
-                let e = NmtError::ResponseMismatch { master_state: NmtMasterStateTag::Idle, node_id: node_id, node_state: new_state };
+            (NmtMasterState::Idle, NmtEvent::Response { node_id, new_state }) => {
+                let e = NmtError::ResponseMismatch {
+                    master_state: NmtMasterStateTag::Idle,
+                    node_id: node_id,
+                    node_state: new_state,
+                };
                 self.state = NmtMasterState::Error(e)
             }
 
             (NmtMasterState::Error(_e), _) => {
-                // do nothing? 
+                // do nothing?
             }
-            
         }
     }
 
@@ -323,5 +336,4 @@ where
             NmtMasterState::Error(e) => NmtOutput::Error(*e),
         }
     }
-
 }
