@@ -7,6 +7,11 @@ use futures::future::BoxFuture;
 use crate::raw::*;
 use crate::machine::*;
 
+pub trait Configurable {
+    type Config;
+    fn configure(&mut self, config: Self::Config);
+}
+
 pub trait CANMachine: MachineTrans<CANFrame, Observation = CANFrame> {}
 
 pub struct Dispatcher<'a>
@@ -16,8 +21,6 @@ pub struct Dispatcher<'a>
     /// Stored boxed handlers
     machines: Vec<&'a mut dyn CANMachine, 16>,
 }
-
-
 
 impl<'a> Dispatcher<'a> {
     pub const fn new() -> Self {
