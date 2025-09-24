@@ -20,6 +20,7 @@ pub enum NmtState {
 pub enum NmtControlCommand {
     Start,
     Stop,
+    EnterPreOperational,
     ResetNode,
     ResetCommunication,
 }
@@ -41,14 +42,11 @@ impl Into<CANFrame> for NmtCommand {
     fn into(self) -> CANFrame {
         // Translate our high‐level command into the 1‐byte NMT command specifier
         let specifier: u8 = match self.cmd {
-            NmtControlCommand::Start              => 0x01,
-            NmtControlCommand::Stop               => 0x02,
-            // According to CiA 301:
-            // 0x80 = enter pre‐operational (not used here)
-            // 0x81 = reset node
-            // 0x82 = reset communication
-            NmtControlCommand::ResetNode          => 0x81,
-            NmtControlCommand::ResetCommunication => 0x82,
+            NmtControlCommand::Start               => 0x01,
+            NmtControlCommand::Stop                => 0x02,
+            NmtControlCommand::EnterPreOperational => 0x80,
+            NmtControlCommand::ResetNode           => 0x81,
+            NmtControlCommand::ResetCommunication  => 0x82,
         };
 
         // Target node‐ID: 0 = all nodes, otherwise 1..127
@@ -169,6 +167,15 @@ where
             target: NodeTarget::Node(node_id),
         });
     }
+
+
+    /// Reset communication on a single node.
+    pub fn enter_preoperational_comm_node(&mut self, node_id: u8) {
+        self.state = NmtMasterState::Execute(NmtCommand {
+            cmd: NmtControlCommand::EnterPreOperational,
+            target: NodeTarget::Node(node_id),
+        });
+    }
     
     /// Reset communication on a single node.
     pub fn reset_comm_node(&mut self, node_id: u8) {
@@ -190,6 +197,7 @@ where
         let expected = match cmd {
             NmtControlCommand::Start => NmtState::Operational,
             NmtControlCommand::Stop => NmtState::Stopped,
+            NmtControlCommand::EnterPreOperational => NmtState::PreOperational,
             NmtControlCommand::ResetNode => NmtState::Initialization,
             NmtControlCommand::ResetCommunication => NmtState::PreOperational,
         };
