@@ -1,10 +1,14 @@
 pub mod abort;
 pub mod machines;
+pub mod client;
 
 use core::ops::Not;
 
 use crate::dictionary::*;
 use crate::sdo::abort::*;
+
+
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
