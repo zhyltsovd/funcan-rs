@@ -13,6 +13,7 @@ categories = ["embedded", "hardware-support", "no-std"]
 publish = true
 
 [dependencies]
+paste = "*"
 futures = {version = "*", default-features = false, features = ["alloc"]}
 heapless = "*"
 
