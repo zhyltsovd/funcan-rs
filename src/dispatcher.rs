@@ -2,8 +2,6 @@ use paste::paste;
 
 use crate::sdo::client::*;
 
-
-
 #[macro_export]
 macro_rules! build_sdo_dispatcher {
     // accept a comma‐separated list of (node_id, DictType) pairs
@@ -42,8 +40,6 @@ macro_rules! build_sdo_dispatcher {
     };
 }
 
-
-
 #[derive(Debug)]
 pub struct D0;
 #[derive(Debug)]
@@ -51,11 +47,7 @@ pub struct D1;
 #[derive(Debug)]
 pub struct D2;
 
-build_sdo_dispatcher!(
-    (0, D0),
-    (1, D1),
-    (2, D2),
-);
+build_sdo_dispatcher!((0, D0), (1, D1), (2, D2),);
 
 #[cfg(test)]
 mod tests {
@@ -64,15 +56,13 @@ mod tests {
     #[test]
     fn it_forwards_to_each_node() {
         let mut disp: SDODispatcher<(), ()> = SDODispatcher::new();
-        
+
         // these will print to stdout when running `cargo test -- --nocapture`
         disp.dispatch(0, [0; 8]);
         disp.dispatch(1, [1; 8]);
         disp.dispatch(2, [2; 8]);
     }
- 
 }
-
 
 /*
 
