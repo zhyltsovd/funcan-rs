@@ -5,8 +5,6 @@
 pub mod cobid;
 /// CAN Open dictionary
 pub mod dictionary;
-/// CANOpen dispatcher
-pub mod dispatcher;
 /// Emergency types and functions
 pub mod emcy;
 /// Heartbeat
