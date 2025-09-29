@@ -105,6 +105,29 @@ impl CANFrame {
     }
 }
 
+
+/// Abstract interface for Controller Area Network (CAN) communication.
+///
+/// This trait provides an async-capable abstraction layer for CAN bus operations,
+/// suitable for both standard and embedded (no_std) environments. Implementations
+/// should handle physical layer details while exposing a hardware-agnostic API.
+pub trait CANInterface {
+    /// Error type returned by CAN interface operations.
+    type Error;
+
+    /// Asynchronously wait for the next CAN frame.
+    fn wait_frame<'a>(
+        self: &'a mut Self,
+    ) -> BoxFuture<'a, Result<CANFrame, Self::Error>>;
+
+    /// Asynchronously send a raw CAN frame through the physical layer.
+    fn send_frame<'a>(
+        self: &'a mut Self,
+        frame: CANFrame,
+    ) -> BoxFuture<'a, Result<(), Self::Error>>;
+}
+
+
 /// Represents the possible states within a CAN frame processing sequence.
 enum State {
     Init,
@@ -329,3 +352,5 @@ mod tests {
         assert_eq!(frame, deserialized_frame);
     }
 }
+
+
