@@ -70,7 +70,7 @@ impl From<CANFrame> for NmtRequest {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum NmtMasterState {
+pub enum NmtMasterState {
     Idle,
     Execute(NmtRequest),
     Error(NmtError),
