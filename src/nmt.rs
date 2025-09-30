@@ -388,6 +388,13 @@ impl<const N: usize, I: ClockInstant> MachineTrans<CANFrame> for NmtMaster<N, I>
         let r: NmtEvent = frame.into();
         self.0.transit(r);
     }
+
+    fn observe(self: &mut Self) -> Self::Observation {
+        let r = self.0.observe(); 
+
+        todo!()
+        
+    }
     
 }
 

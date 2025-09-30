@@ -14,7 +14,7 @@ pub struct SDOClient<R, W, D> {
     _phantom: PhantomData<D>,
 }
 
-pub enum SDOConfig<D: Dictionary, R, W> {
+pub enum SDOConfig<R, W, D: Dictionary> {
     Read(u8, D::Index, R),
     Write(u8, D::Index, D::Object, W),
 }
