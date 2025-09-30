@@ -1,7 +1,7 @@
 /// 7-bit CANopen Node ID (1..127). 0 is valid for "all nodes" in NMT,
 /// but rarely used elsewhere.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NodeId(u8);
+pub struct NodeId(pub u8);
 
 impl NodeId {
     pub fn new(id: u8) -> Option<Self> {
