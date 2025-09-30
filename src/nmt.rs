@@ -77,7 +77,7 @@ pub enum NmtMasterState {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum NmtMasterStateTag {
+pub enum NmtMasterStateTag {
     Idle,
     Execute,
     Error,
