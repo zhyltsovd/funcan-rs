@@ -22,6 +22,7 @@ pub struct NmtRequest {
     pub cmd: NmtCommand,
     pub target: NodeTarget,
 }
+
 impl Into<CANFrame> for NmtRequest {
     fn into(self) -> CANFrame {
         
@@ -42,6 +43,30 @@ impl Into<CANFrame> for NmtRequest {
             can_data: data,
         }
     }
+}
+
+impl From<CANFrame> for NmtRequest {
+    fn from(frame: CANFrame) -> Self {
+        let cmd =
+            match frame.can_data[0] {
+                0x01 => NmtCommand::StartRemoteNode,
+                0x02 => NmtCommand::StopRemoteNode,
+                0x80 => NmtCommand::EnterPreOperational,
+                0x81 => NmtCommand::ResetNode,
+                0x82 => NmtCommand::ResetCommunication,
+                _ => unreachable!()
+            };
+        
+        let target =
+            if frame.can_data[1] == 0 {
+                NodeTarget::All
+            } else {
+                NodeTarget::Node(frame.can_data[1])
+            };
+        
+        NmtRequest { cmd , target }
+    }
+        
 }
 
 #[derive(Debug, Copy, Clone)]
