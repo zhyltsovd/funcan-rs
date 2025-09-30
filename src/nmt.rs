@@ -16,6 +16,40 @@ pub enum NmtState {
     Stopped,
 }
 
+impl NmtState {
+    fn to_code(self) -> u8 {
+        match self {
+            NmtState::Initialization   => 0x00,
+            NmtState::Stopped          => 0x04,
+            NmtState::Operational      => 0x05,
+            NmtState::PreOperational   => 0x7F,
+        }
+    }
+
+    fn from_code(c: u8) -> Self {
+        match c {
+            0x00 => NmtState::Initialization,
+            0x04 => NmtState::Stopped,
+            0x05 => NmtState::Operational,
+            0x7F => NmtState::PreOperational,
+            _    => unreachable!(),
+        }
+    }
+}
+
+impl From<CANFrame> for NmtEvent {
+    fn from(frame: CANFrame) -> NmtEvent {
+        let node = (frame.can_cobid & NODE_MASK) as u8;
+        let code = frame.can_data[0];
+        let state = NmtState::from_code(code);
+        
+        NmtEvent::Response {
+            node_id:   node,
+            new_state: state,
+        }
+    }
+}
+
 /// High‐level NMT command request.
 #[derive(Debug, Copy, Clone)]
 pub struct NmtRequest {
@@ -135,7 +169,7 @@ struct Pending<I: ClockInstant> {
     retries: u8,
 }
 
-pub struct NmtMaster<const N: usize, I: ClockInstant> {
+pub struct NmtMasterMachine<const N: usize, I: ClockInstant> {
     /// Current state of each known node.
     node_states: FnvIndexMap<u8, NmtState, N>,
     /// Pending requests by node waiting for a response.
@@ -147,7 +181,7 @@ pub struct NmtMaster<const N: usize, I: ClockInstant> {
     state: NmtMasterState,
 }
 
-impl<const N: usize, I> NmtMaster<N, I>
+impl<const N: usize, I> NmtMasterMachine<N, I>
 where
     I: ClockInstant,
 {
@@ -156,7 +190,7 @@ where
             .into_iter()
             .map(|id| (id, NmtState::Initialization))
             .collect();
-        NmtMaster {
+        NmtMasterMachine {
             state: NmtMasterState::Idle,
             node_states,
             pendings: FnvIndexMap::new(),
@@ -278,7 +312,7 @@ where
     }
 }
 
-impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMaster<N, I>
+impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMasterMachine<N, I>
 where
     I: ClockInstant,
 {
@@ -338,3 +372,22 @@ where
         }
     }
 }
+
+
+pub struct NmtMaster<const N: usize, I: ClockInstant>(pub NmtMasterMachine<N, I>);
+
+impl<const N: usize, I: ClockInstant> MachineTrans<CANFrame> for NmtMaster<N, I>
+{
+    type Observation = Option<CANFrame>;
+   
+    fn initial(self: &mut Self) {
+        self.0.initial();
+    }
+
+    fn transit(self: &mut Self, frame: CANFrame) {
+        let r: NmtEvent = frame.into();
+        self.0.transit(r);
+    }
+    
+}
+

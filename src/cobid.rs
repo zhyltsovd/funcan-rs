@@ -43,7 +43,7 @@ pub enum NmtCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CobId {
     /// NMT management service (always uses COB-ID 0x000).  Data[0] = cmd, Data[1] = node.
-    NmtService { cmd: NmtCommand, target: NodeTarget},
+    NmtService,
 
     /// Synchronization object (COB-ID = 0x080).  Data may carry SYNC counter (optional).
     Sync,
@@ -73,13 +73,13 @@ pub enum CobId {
     ManufacturerSpecific(u16),
 }
 
-const NODE_MASK:  u32 = 0x7F;    // lower 7 bits
+pub const NODE_MASK:  u32 = 0x7F;    // lower 7 bits
 const FUNC_MASK:  u32 = 0x780;   // next 4 bits << 7
 
 impl From<CobId> for u32 {
     fn from(c: CobId) -> u32 {
         match c {
-            CobId::NmtService { .. }  => 0x000,
+            CobId::NmtService         => 0x000,
             CobId::Sync               => 0x080,
             CobId::TimeStamp          => 0x100,
             CobId::Emergency(n)       => 0x080 | (n.get() as u32),
@@ -110,10 +110,7 @@ impl From<u32> for CobId {
                 // to figure out the actual NmtCommand and target node,
                 // so we just return a placeholder here.
                 // Application code can then decode actual bytes.
-                CobId::NmtService {
-                    cmd: NmtCommand::StartRemoteNode, // placeholder
-                    target: NodeTarget::All,
-                }
+                CobId::NmtService 
             }
 
             // Sync object
