@@ -9,7 +9,7 @@ use crate::sdo::machines::*;
 use crate::sdo::*;
 
 pub struct SDOClient<R, W, D> {
-    pub node: u8,
+    pub node: NodeId,
     pub sdo: ClientMachine<R, W>,
     _phantom: PhantomData<D>,
 }
@@ -74,7 +74,7 @@ where
         match r {
             ClientOutput::Output(out) => {
                 let data_out: [u8; 8] = out.into();
-                let fun_code = FunCode::Node(NodeCmd::SdoReq, self.node);
+                let fun_code = CobId::SdoRequest(self.node);
                 let frame_out = CANFrame {
                     can_cobid: fun_code.into(),
                     can_len: 8,

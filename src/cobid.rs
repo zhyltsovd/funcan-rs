@@ -1,110 +1,143 @@
-const NODE_MASK: u32 = 0x7F; // 7 bits for node ID
-const FUN_MASK: u32 = 0x780; // 4 bits for function code (shifted << 7)
+/// 7-bit CANopen Node ID (1..127). 0 is valid for "all nodes" in NMT,
+/// but rarely used elsewhere.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NodeId(u8);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BroadcastCmd {
-    Nmt,  // Network Management
-    Sync, // Synchronization
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum NodeCmd {
-    Emergency,
-    Time,
-    Pdo1Tx,
-    Pdo1Rx,
-    Pdo2Tx,
-    Pdo2Rx,
-    Pdo3Tx,
-    Pdo3Rx,
-    Pdo4Tx,
-    Pdo4Rx,
-    SdoResp,
-    SdoReq,
-    Heartbeat,
-    Unused,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FunCode {
-    Broadcast(BroadcastCmd),
-    Node(NodeCmd, u8),
-}
-
-// Decoding implementation
-fn decode_broadcast(cob_id: u32) -> Option<BroadcastCmd> {
-    let fun = cob_id & FUN_MASK;
-    let node = cob_id & NODE_MASK;
-
-    match (fun, node) {
-        (0x000, _) => Some(BroadcastCmd::Nmt),
-        (0x080, 0x00) => Some(BroadcastCmd::Sync),
-        _ => None,
-    }
-}
-
-fn decode_node_code(func_part: u32) -> NodeCmd {
-    match func_part {
-        0x080 => NodeCmd::Emergency,
-        0x100 => NodeCmd::Time,
-        0x180 => NodeCmd::Pdo1Tx,
-        0x200 => NodeCmd::Pdo1Rx,
-        0x280 => NodeCmd::Pdo2Tx,
-        0x300 => NodeCmd::Pdo2Rx,
-        0x380 => NodeCmd::Pdo3Tx,
-        0x400 => NodeCmd::Pdo3Rx,
-        0x480 => NodeCmd::Pdo4Tx,
-        0x500 => NodeCmd::Pdo4Rx,
-        0x580 => NodeCmd::SdoResp,
-        0x600 => NodeCmd::SdoReq,
-        0x700 => NodeCmd::Heartbeat,
-        _ => NodeCmd::Unused,
-    }
-}
-
-impl From<u32> for FunCode {
-    fn from(cob_id: u32) -> Self {
-        if let Some(broadcast) = decode_broadcast(cob_id) {
-            FunCode::Broadcast(broadcast)
+impl NodeId {
+    pub fn new(id: u8) -> Option<Self> {
+        if id <= 0x7F {
+            Some(NodeId(id))
         } else {
-            let func_part = cob_id & FUN_MASK;
-            let node = (cob_id & NODE_MASK) as u8;
-            let cmd = decode_node_code(func_part);
-            FunCode::Node(cmd, node)
+            None
         }
     }
+    pub fn get(&self) -> u8 { self.0 }
 }
 
-// Encoding implementation
-fn encode_node_code(cmd: NodeCmd) -> u32 {
-    match cmd {
-        NodeCmd::Emergency => 0x080,
-        NodeCmd::Time => 0x100,
-        NodeCmd::Pdo1Tx => 0x180,
-        NodeCmd::Pdo1Rx => 0x200,
-        NodeCmd::Pdo2Tx => 0x280,
-        NodeCmd::Pdo2Rx => 0x300,
-        NodeCmd::Pdo3Tx => 0x380,
-        NodeCmd::Pdo3Rx => 0x400,
-        NodeCmd::Pdo4Tx => 0x480,
-        NodeCmd::Pdo4Rx => 0x500,
-        NodeCmd::SdoResp => 0x580,
-        NodeCmd::SdoReq => 0x600,
-        NodeCmd::Heartbeat => 0x700,
-        NodeCmd::Unused => 0x000,
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NmtCommand {
+    StartRemoteNode        = 0x01,
+    StopRemoteNode         = 0x02,
+    EnterPreOperational    = 0x80,
+    ResetNode              = 0x81,
+    ResetCommunication     = 0x82,
 }
 
-impl From<FunCode> for u32 {
-    fn from(code: FunCode) -> u32 {
-        match code {
-            FunCode::Broadcast(BroadcastCmd::Nmt) => 0x000,
-            FunCode::Broadcast(BroadcastCmd::Sync) => 0x080,
-            FunCode::Node(cmd, node) => {
-                let func_part = encode_node_code(cmd);
-                let node_part = (node as u32) & NODE_MASK;
-                func_part | node_part
+/// Our “master” enum for every CANopen‐defined COB-ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CobId {
+    /// NMT management service (always uses COB-ID 0x000).  Data[0] = cmd, Data[1] = node.
+    NmtService { cmd: NmtCommand, target: NodeId },
+
+    /// Synchronization object (COB-ID = 0x080).  Data may carry SYNC counter (optional).
+    Sync,
+
+    /// Time stamp object (COB-ID = 0x100).
+    TimeStamp,
+
+    /// Emergency message (COB-ID = 0x080 + nodeid)
+    Emergency(NodeId),
+
+    /// PDO Tx: 1..4
+    PdoTx { pdo_number: u8 /*1..4*/, node: NodeId },
+
+    /// PDO Rx: 1..4
+    PdoRx { pdo_number: u8 /*1..4*/, node: NodeId },
+
+    /// SDO Response  (COB-ID = 0x580 + node)
+    SdoResponse(NodeId),
+
+    /// SDO Request   (COB-ID = 0x600 + node)
+    SdoRequest(NodeId),
+
+    /// Heartbeat or Node-Guard (COB-ID = 0x700 + node)
+    Heartbeat(NodeId),
+
+    /// Everything else: manufacturer-specific or reserved
+    ManufacturerSpecific(u16),
+}
+
+const NODE_MASK:  u32 = 0x7F;    // lower 7 bits
+const FUNC_MASK:  u32 = 0x780;   // next 4 bits << 7
+
+impl From<CobId> for u32 {
+    fn from(c: CobId) -> u32 {
+        match c {
+            CobId::NmtService { .. }  => 0x000,
+            CobId::Sync               => 0x080,
+            CobId::TimeStamp          => 0x100,
+            CobId::Emergency(n)       => 0x080 | (n.get() as u32),
+            CobId::PdoTx { pdo_number, node } => {
+                let base = 0x100 * pdo_number as u32 + 0x080;
+                base | (node.get() as u32)
             }
+            CobId::PdoRx { pdo_number, node } => {
+                let base = 0x100 * pdo_number as u32 + 0x100;
+                base | (node.get() as u32)
+            }
+            CobId::SdoResponse(n)    => 0x580 | (n.get() as u32),
+            CobId::SdoRequest(n)     => 0x600 | (n.get() as u32),
+            CobId::Heartbeat(n)      => 0x700 | (n.get() as u32),
+            CobId::ManufacturerSpecific(id) => id as u32,
         }
     }
 }
+
+impl From<u32> for CobId {
+    fn from(raw: u32) -> CobId {
+        let func = raw & FUNC_MASK;
+        let node = (raw & NODE_MASK) as u8;
+        match (func, node) {
+            // NMT service is always COB-ID = 0x000
+            (0x000, _) => {
+                // data[0] and data[1] must be examined by caller
+                // to figure out the actual NmtCommand and target node,
+                // so we just return a placeholder here.
+                // Application code can then decode actual bytes.
+                CobId::NmtService {
+                    cmd: NmtCommand::StartRemoteNode, // placeholder
+                    target: NodeId(node),
+                }
+            }
+
+            // Sync object
+            (0x080, 0x00) => CobId::Sync,
+
+            // timestamp
+            (0x100, 0x00) => CobId::TimeStamp,
+
+            // Emergency
+            (0x080, n) if n != 0 => {
+                CobId::Emergency(NodeId(n))
+            }
+
+            // PDO Tx [1..4]
+            (fp, n) if (0x180..=0x480).contains(&fp) && (fp - 0x080) % 0x100 == 0 => {
+                let pdo = ((fp - 0x080) / 0x100) as u8;
+                CobId::PdoTx {
+                    pdo_number: pdo,
+                    node: NodeId(n),
+                }
+            }
+            // PDO Rx [1..4]
+            (fp, n) if (0x200..=0x500).contains(&fp) && (fp - 0x100) % 0x100 == 0 => {
+                let pdo = ((fp - 0x100) / 0x100) as u8;
+                CobId::PdoRx {
+                    pdo_number: pdo,
+                    node: NodeId(n),
+                }
+            }
+
+            // SDO Resp
+            (0x580, n) => CobId::SdoResponse(NodeId(n)),
+            // SDO Req
+            (0x600, n) => CobId::SdoRequest(NodeId(n)),
+            // Heartbeat / Guard
+            (0x700, n) => CobId::Heartbeat(NodeId(n)),
+
+            // Anything else
+            _ => CobId::ManufacturerSpecific(raw as u16),
+        }
+    }
+}
+
