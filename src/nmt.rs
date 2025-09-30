@@ -5,6 +5,7 @@ use heapless::vec::Vec;
 use crate::interfaces::ClockInstant;
 use crate::machine::*;
 use crate::raw::*;
+use crate::cobid::*;
 
 /// The possible NMT states of a node.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -15,46 +16,21 @@ pub enum NmtState {
     Stopped,
 }
 
-/// The low‐level NMT control service (no node‐ID, no framing).
-#[derive(Debug, Copy, Clone)]
-pub enum NmtControlCommand {
-    Start,
-    Stop,
-    EnterPreOperational,
-    ResetNode,
-    ResetCommunication,
-}
-
-/// Target of a command: a single node or all nodes.
-#[derive(Debug, Copy, Clone)]
-pub enum NodeTarget {
-    Node(u8),
-    All,
-}
-
 /// High‐level NMT command request.
 #[derive(Debug, Copy, Clone)]
-pub struct NmtCommand {
-    pub cmd: NmtControlCommand,
+pub struct NmtRequest {
+    pub cmd: NmtCommand,
     pub target: NodeTarget,
 }
-impl Into<CANFrame> for NmtCommand {
+impl Into<CANFrame> for NmtRequest {
     fn into(self) -> CANFrame {
+        
         // Translate our high‐level command into the 1‐byte NMT command specifier
-        let specifier: u8 = match self.cmd {
-            NmtControlCommand::Start => 0x01,
-            NmtControlCommand::Stop => 0x02,
-            NmtControlCommand::EnterPreOperational => 0x80,
-            NmtControlCommand::ResetNode => 0x81,
-            NmtControlCommand::ResetCommunication => 0x82,
-        };
+        let specifier: u8 = self.cmd as u8;
 
         // Target node‐ID: 0 = all nodes, otherwise 1..127
-        let node_id_byte: u8 = match self.target {
-            NodeTarget::All => 0,
-            NodeTarget::Node(n) => n,
-        };
-
+        let node_id_byte = self.target.into();
+        
         // Build the 8‐byte CAN frame (only first two bytes are used)
         let mut data = [0u8; 8];
         data[0] = specifier;
@@ -71,7 +47,7 @@ impl Into<CANFrame> for NmtCommand {
 #[derive(Debug, Copy, Clone)]
 enum NmtMasterState {
     Idle,
-    Execute(NmtCommand),
+    Execute(NmtRequest),
     Error(NmtError),
 }
 
@@ -122,7 +98,7 @@ pub enum NmtError {
 #[derive(Debug)]
 pub enum NmtOutput {
     Ready,
-    Command(NmtCommand),
+    Command(NmtRequest),
     Error(NmtError),
 }
 
@@ -166,51 +142,51 @@ where
 
     /// Start a single node.
     pub fn start_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtCommand {
-            cmd: NmtControlCommand::Start,
+        self.state = NmtMasterState::Execute(NmtRequest {
+            cmd: NmtCommand::StartRemoteNode,
             target: NodeTarget::Node(node_id),
         });
     }
 
     /// Stop a single node.
     pub fn stop_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtCommand {
-            cmd: NmtControlCommand::Stop,
+        self.state = NmtMasterState::Execute(NmtRequest {
+            cmd: NmtCommand::StopRemoteNode,
             target: NodeTarget::Node(node_id),
         });
     }
 
     /// Reset communication on a single node.
     pub fn enter_preoperational_comm_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtCommand {
-            cmd: NmtControlCommand::EnterPreOperational,
+        self.state = NmtMasterState::Execute(NmtRequest {
+            cmd: NmtCommand::EnterPreOperational,
             target: NodeTarget::Node(node_id),
         });
     }
 
     /// Reset communication on a single node.
     pub fn reset_comm_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtCommand {
-            cmd: NmtControlCommand::ResetCommunication,
+        self.state = NmtMasterState::Execute(NmtRequest {
+            cmd: NmtCommand::ResetCommunication,
             target: NodeTarget::Node(node_id),
         });
     }
 
     /// Reset the application on a single node.
     pub fn reset_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtCommand {
-            cmd: NmtControlCommand::ResetNode,
+        self.state = NmtMasterState::Execute(NmtRequest {
+            cmd: NmtCommand::ResetNode,
             target: NodeTarget::Node(node_id),
         });
     }
 
-    fn handle_response(self: &mut Self, cmd: NmtControlCommand, node_id: u8, new_state: NmtState) {
+    fn handle_response(self: &mut Self, cmd: NmtCommand, node_id: u8, new_state: NmtState) {
         let expected = match cmd {
-            NmtControlCommand::Start => NmtState::Operational,
-            NmtControlCommand::Stop => NmtState::Stopped,
-            NmtControlCommand::EnterPreOperational => NmtState::PreOperational,
-            NmtControlCommand::ResetNode => NmtState::Initialization,
-            NmtControlCommand::ResetCommunication => NmtState::PreOperational,
+            NmtCommand::StartRemoteNode => NmtState::Operational,
+            NmtCommand::StopRemoteNode => NmtState::Stopped,
+            NmtCommand::EnterPreOperational => NmtState::PreOperational,
+            NmtCommand::ResetNode => NmtState::Initialization,
+            NmtCommand::ResetCommunication => NmtState::PreOperational,
         };
 
         if new_state == expected {
@@ -253,17 +229,17 @@ where
                     let target = NodeTarget::Node(node_id);
 
                     let cmd = match pend.expected {
-                        NmtState::Operational => NmtControlCommand::Start,
-                        NmtState::Stopped => NmtControlCommand::Stop,
-                        NmtState::Initialization => NmtControlCommand::ResetNode,
-                        NmtState::PreOperational => NmtControlCommand::ResetCommunication,
+                        NmtState::Operational => NmtCommand::StartRemoteNode,
+                        NmtState::Stopped => NmtCommand::StopRemoteNode,
+                        NmtState::Initialization => NmtCommand::ResetNode,
+                        NmtState::PreOperational => NmtCommand::ResetCommunication,
                     };
 
                     pend.sent_at = I::now();
                     pend.retries += 1;
                     self.pendings.insert(node_id, pend);
 
-                    let x = NmtCommand { cmd, target };
+                    let x = NmtRequest { cmd, target };
                     self.state = NmtMasterState::Execute(x);
                 } else {
                     // permanent timeout

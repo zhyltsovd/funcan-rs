@@ -14,6 +14,22 @@ impl NodeId {
     pub fn get(&self) -> u8 { self.0 }
 }
 
+/// Target of a command: a single node or all nodes.
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum NodeTarget {
+    Node(u8),
+    All,
+}
+
+impl Into<u8> for NodeTarget {
+    fn into(self: Self) -> u8 {
+        match self {
+            NodeTarget::All => 0,
+            NodeTarget::Node(n) => n,
+        }
+    }
+}
+     
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NmtCommand {
     StartRemoteNode        = 0x01,
@@ -27,7 +43,7 @@ pub enum NmtCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CobId {
     /// NMT management service (always uses COB-ID 0x000).  Data[0] = cmd, Data[1] = node.
-    NmtService { cmd: NmtCommand, target: NodeId },
+    NmtService { cmd: NmtCommand, target: NodeTarget},
 
     /// Synchronization object (COB-ID = 0x080).  Data may carry SYNC counter (optional).
     Sync,
@@ -96,7 +112,7 @@ impl From<u32> for CobId {
                 // Application code can then decode actual bytes.
                 CobId::NmtService {
                     cmd: NmtCommand::StartRemoteNode, // placeholder
-                    target: NodeId(node),
+                    target: NodeTarget::All,
                 }
             }
 
