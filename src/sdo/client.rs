@@ -26,6 +26,11 @@ where
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
 {
+    pub fn new(node: NodeId) -> Self {
+        let sdo = ClientMachine::default();
+        SDOClient {node, sdo, _phantom: PhantomData}
+    }
+    
     #[inline]
     fn handle_sdo_result(self: &mut Self, r: ClientResult<R, W>) {
         match r {
