@@ -105,7 +105,6 @@ impl CANFrame {
     }
 }
 
-
 /// Represents the possible states within a CAN frame processing sequence.
 enum State {
     Init,
@@ -330,5 +329,3 @@ mod tests {
         assert_eq!(frame, deserialized_frame);
     }
 }
-
-

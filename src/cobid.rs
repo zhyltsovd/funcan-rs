@@ -11,7 +11,9 @@ impl NodeId {
             None
         }
     }
-    pub fn get(&self) -> u8 { self.0 }
+    pub fn get(&self) -> u8 {
+        self.0
+    }
 }
 
 /// Target of a command: a single node or all nodes.
@@ -29,14 +31,14 @@ impl Into<u8> for NodeTarget {
         }
     }
 }
-     
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NmtCommand {
-    StartRemoteNode        = 0x01,
-    StopRemoteNode         = 0x02,
-    EnterPreOperational    = 0x80,
-    ResetNode              = 0x81,
-    ResetCommunication     = 0x82,
+    StartRemoteNode = 0x01,
+    StopRemoteNode = 0x02,
+    EnterPreOperational = 0x80,
+    ResetNode = 0x81,
+    ResetCommunication = 0x82,
 }
 
 /// Our “master” enum for every CANopen‐defined COB-ID
@@ -55,10 +57,16 @@ pub enum CobId {
     Emergency(NodeId),
 
     /// PDO Tx: 1..4
-    PdoTx { pdo_number: u8 /*1..4*/, node: NodeId },
+    PdoTx {
+        pdo_number: u8, /*1..4*/
+        node: NodeId,
+    },
 
     /// PDO Rx: 1..4
-    PdoRx { pdo_number: u8 /*1..4*/, node: NodeId },
+    PdoRx {
+        pdo_number: u8, /*1..4*/
+        node: NodeId,
+    },
 
     /// SDO Response  (COB-ID = 0x580 + node)
     SdoResponse(NodeId),
@@ -73,16 +81,16 @@ pub enum CobId {
     ManufacturerSpecific(u16),
 }
 
-pub const NODE_MASK:  u32 = 0x7F;    // lower 7 bits
-const FUNC_MASK:  u32 = 0x780;   // next 4 bits << 7
+pub const NODE_MASK: u32 = 0x7F; // lower 7 bits
+const FUNC_MASK: u32 = 0x780; // next 4 bits << 7
 
 impl From<CobId> for u32 {
     fn from(c: CobId) -> u32 {
         match c {
-            CobId::NmtService         => 0x000,
-            CobId::Sync               => 0x080,
-            CobId::TimeStamp          => 0x100,
-            CobId::Emergency(n)       => 0x080 | (n.get() as u32),
+            CobId::NmtService => 0x000,
+            CobId::Sync => 0x080,
+            CobId::TimeStamp => 0x100,
+            CobId::Emergency(n) => 0x080 | (n.get() as u32),
             CobId::PdoTx { pdo_number, node } => {
                 let base = 0x100 * pdo_number as u32 + 0x080;
                 base | (node.get() as u32)
@@ -91,9 +99,9 @@ impl From<CobId> for u32 {
                 let base = 0x100 * pdo_number as u32 + 0x100;
                 base | (node.get() as u32)
             }
-            CobId::SdoResponse(n)    => 0x580 | (n.get() as u32),
-            CobId::SdoRequest(n)     => 0x600 | (n.get() as u32),
-            CobId::Heartbeat(n)      => 0x700 | (n.get() as u32),
+            CobId::SdoResponse(n) => 0x580 | (n.get() as u32),
+            CobId::SdoRequest(n) => 0x600 | (n.get() as u32),
+            CobId::Heartbeat(n) => 0x700 | (n.get() as u32),
             CobId::ManufacturerSpecific(id) => id as u32,
         }
     }
@@ -110,7 +118,7 @@ impl From<u32> for CobId {
                 // to figure out the actual NmtCommand and target node,
                 // so we just return a placeholder here.
                 // Application code can then decode actual bytes.
-                CobId::NmtService 
+                CobId::NmtService
             }
 
             // Sync object
@@ -120,9 +128,7 @@ impl From<u32> for CobId {
             (0x100, 0x00) => CobId::TimeStamp,
 
             // Emergency
-            (0x080, n) if n != 0 => {
-                CobId::Emergency(NodeId(n))
-            }
+            (0x080, n) if n != 0 => CobId::Emergency(NodeId(n)),
 
             // PDO Tx [1..4]
             (fp, n) if (0x180..=0x480).contains(&fp) && (fp - 0x080) % 0x100 == 0 => {
@@ -153,4 +159,3 @@ impl From<u32> for CobId {
         }
     }
 }
-

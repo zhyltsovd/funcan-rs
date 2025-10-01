@@ -22,7 +22,7 @@ pub enum SDOConfig<R, W, D: Dictionary> {
 pub enum SDOConfigResult {
     Ok,
     Busy,
-    Error
+    Error,
 }
 
 impl<R, W, D: Dictionary> SDOClient<R, W, D>
@@ -34,9 +34,13 @@ where
 {
     pub fn new(node: NodeId) -> Self {
         let sdo = ClientMachine::default();
-        SDOClient {node, sdo, _phantom: PhantomData}
+        SDOClient {
+            node,
+            sdo,
+            _phantom: PhantomData,
+        }
     }
- 
+
     pub fn config(self: &mut Self, config: SDOConfig<R, W, D>) -> SDOConfigResult {
         match config {
             SDOConfig::Read(ix, r) => {
@@ -66,7 +70,7 @@ where
             }
         }
     }
-    
+
     #[inline]
     fn handle_sdo_result(self: &mut Self, r: ClientResult<R, W>) {
         match r {
@@ -93,7 +97,7 @@ impl<R, W, D> MachineTrans<CANFrame> for SDOClient<R, W, D>
 where
     D: Dictionary,
     D::Index: TryFrom<Index> + Into<Index>,
-    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>+ IntoBuf,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
 {

@@ -2,10 +2,10 @@ use core::time::Duration;
 use heapless::index_map::FnvIndexMap;
 use heapless::vec::Vec;
 
+use crate::cobid::*;
 use crate::interfaces::*;
 use crate::machine::*;
 use crate::raw::*;
-use crate::cobid::*;
 
 /// The possible NMT states of a node.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -19,10 +19,10 @@ pub enum NmtState {
 impl NmtState {
     fn to_code(self) -> u8 {
         match self {
-            NmtState::Initialization   => 0x00,
-            NmtState::Stopped          => 0x04,
-            NmtState::Operational      => 0x05,
-            NmtState::PreOperational   => 0x7F,
+            NmtState::Initialization => 0x00,
+            NmtState::Stopped => 0x04,
+            NmtState::Operational => 0x05,
+            NmtState::PreOperational => 0x7F,
         }
     }
 
@@ -32,7 +32,7 @@ impl NmtState {
             0x04 => NmtState::Stopped,
             0x05 => NmtState::Operational,
             0x7F => NmtState::PreOperational,
-            _    => unreachable!(),
+            _ => unreachable!(),
         }
     }
 }
@@ -53,9 +53,9 @@ impl From<CANFrame> for NmtEvent {
         let node = (frame.can_cobid & NODE_MASK) as u8;
         let code = frame.can_data[0];
         let state = NmtState::from_code(code);
-        
+
         NmtEvent::Response {
-            node_id:   node,
+            node_id: node,
             new_state: state,
         }
     }
@@ -70,13 +70,12 @@ pub struct NmtRequest {
 
 impl Into<CANFrame> for NmtRequest {
     fn into(self) -> CANFrame {
-        
         // Translate our high‐level command into the 1‐byte NMT command specifier
         let specifier: u8 = self.cmd as u8;
 
         // Target node‐ID: 0 = all nodes, otherwise 1..127
         let node_id_byte = self.target.into();
-        
+
         // Build the 8‐byte CAN frame (only first two bytes are used)
         let mut data = [0u8; 8];
         data[0] = specifier;
@@ -92,26 +91,23 @@ impl Into<CANFrame> for NmtRequest {
 
 impl From<CANFrame> for NmtRequest {
     fn from(frame: CANFrame) -> Self {
-        let cmd =
-            match frame.can_data[0] {
-                0x01 => NmtCommand::StartRemoteNode,
-                0x02 => NmtCommand::StopRemoteNode,
-                0x80 => NmtCommand::EnterPreOperational,
-                0x81 => NmtCommand::ResetNode,
-                0x82 => NmtCommand::ResetCommunication,
-                _ => unreachable!()
-            };
-        
-        let target =
-            if frame.can_data[1] == 0 {
-                NodeTarget::All
-            } else {
-                NodeTarget::Node(frame.can_data[1])
-            };
-        
-        NmtRequest { cmd , target }
+        let cmd = match frame.can_data[0] {
+            0x01 => NmtCommand::StartRemoteNode,
+            0x02 => NmtCommand::StopRemoteNode,
+            0x80 => NmtCommand::EnterPreOperational,
+            0x81 => NmtCommand::ResetNode,
+            0x82 => NmtCommand::ResetCommunication,
+            _ => unreachable!(),
+        };
+
+        let target = if frame.can_data[1] == 0 {
+            NodeTarget::All
+        } else {
+            NodeTarget::Node(frame.can_data[1])
+        };
+
+        NmtRequest { cmd, target }
     }
-        
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -191,13 +187,13 @@ pub struct NmtMasterMachine<const N: usize, I: ClockInstant, R> {
     /// State
     state: NmtMasterState,
     /// State change responders
-    responders: FnvIndexMap<NodeTarget, R, N>
+    responders: FnvIndexMap<NodeTarget, R, N>,
 }
 
 impl<const N: usize, I, R> NmtMasterMachine<N, I, R>
 where
     I: ClockInstant,
-    R: Responder<Option<NmtState>>
+    R: Responder<Option<NmtState>>,
 {
     pub fn new<Nodes: IntoIterator<Item = u8>>(nodes: Nodes, timeout: u64) -> Self {
         let node_states = nodes
@@ -245,7 +241,7 @@ where
         if let Some(resp) = maybe_resp {
             resp.respond(Some(new_state));
         }
-            
+
         self.node_states.insert(node_id, new_state);
     }
 
@@ -360,13 +356,15 @@ where
     }
 }
 
+pub struct NmtMaster<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>>(
+    pub NmtMasterMachine<N, I, R>,
+);
 
-pub struct NmtMaster<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>>(pub NmtMasterMachine<N, I, R>);
-
-impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTrans<CANFrame> for NmtMaster<N, I, R>
+impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTrans<CANFrame>
+    for NmtMaster<N, I, R>
 {
     type Observation = Option<CANFrame>;
-   
+
     fn initial(self: &mut Self) {
         self.0.initial();
     }
@@ -377,11 +375,8 @@ impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTra
     }
 
     fn observe(self: &mut Self) -> Self::Observation {
-        let r = self.0.observe(); 
+        let r = self.0.observe();
 
         todo!()
-        
     }
-    
 }
-
