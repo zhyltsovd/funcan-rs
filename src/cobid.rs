@@ -15,7 +15,7 @@ impl NodeId {
 }
 
 /// Target of a command: a single node or all nodes.
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum NodeTarget {
     Node(u8),
     All,

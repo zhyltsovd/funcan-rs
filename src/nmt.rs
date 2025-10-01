@@ -2,7 +2,7 @@ use core::time::Duration;
 use heapless::index_map::FnvIndexMap;
 use heapless::vec::Vec;
 
-use crate::interfaces::ClockInstant;
+use crate::interfaces::*;
 use crate::machine::*;
 use crate::raw::*;
 use crate::cobid::*;
@@ -169,7 +169,7 @@ struct Pending<I: ClockInstant> {
     retries: u8,
 }
 
-pub struct NmtMasterMachine<const N: usize, I: ClockInstant> {
+pub struct NmtMasterMachine<const N: usize, I: ClockInstant, R> {
     /// Current state of each known node.
     node_states: FnvIndexMap<u8, NmtState, N>,
     /// Pending requests by node waiting for a response.
@@ -179,11 +179,14 @@ pub struct NmtMasterMachine<const N: usize, I: ClockInstant> {
     max_retries: u8,
     /// State
     state: NmtMasterState,
+    /// State change responders
+    responders: FnvIndexMap<NodeTarget, R, N>
 }
 
-impl<const N: usize, I> NmtMasterMachine<N, I>
+impl<const N: usize, I, R> NmtMasterMachine<N, I, R>
 where
     I: ClockInstant,
+    R: Responder<Option<NmtState>>
 {
     pub fn new<Nodes: IntoIterator<Item = u8>>(nodes: Nodes, timeout: u64) -> Self {
         let node_states = nodes
@@ -196,47 +199,14 @@ where
             pendings: FnvIndexMap::new(),
             timeout: Duration::from_millis(timeout),
             max_retries: 3,
+            responders: FnvIndexMap::new(),
         }
     }
 
-    /// Start a single node.
-    pub fn start_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtRequest {
-            cmd: NmtCommand::StartRemoteNode,
-            target: NodeTarget::Node(node_id),
-        });
-    }
-
-    /// Stop a single node.
-    pub fn stop_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtRequest {
-            cmd: NmtCommand::StopRemoteNode,
-            target: NodeTarget::Node(node_id),
-        });
-    }
-
-    /// Reset communication on a single node.
-    pub fn enter_preoperational_comm_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtRequest {
-            cmd: NmtCommand::EnterPreOperational,
-            target: NodeTarget::Node(node_id),
-        });
-    }
-
-    /// Reset communication on a single node.
-    pub fn reset_comm_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtRequest {
-            cmd: NmtCommand::ResetCommunication,
-            target: NodeTarget::Node(node_id),
-        });
-    }
-
-    /// Reset the application on a single node.
-    pub fn reset_node(&mut self, node_id: u8) {
-        self.state = NmtMasterState::Execute(NmtRequest {
-            cmd: NmtCommand::ResetNode,
-            target: NodeTarget::Node(node_id),
-        });
+    /// excecute NMT request
+    pub fn execute_request(&mut self, request: NmtRequest, responder: R) {
+        self.responders.insert(request.target, responder);
+        self.state = NmtMasterState::Execute(request);
     }
 
     fn handle_response(self: &mut Self, cmd: NmtCommand, node_id: u8, new_state: NmtState) {
@@ -312,8 +282,9 @@ where
     }
 }
 
-impl<const N: usize, I> MachineTrans<NmtEvent> for NmtMasterMachine<N, I>
+impl<const N: usize, I, R> MachineTrans<NmtEvent> for NmtMasterMachine<N, I, R>
 where
+    R: Responder<Option<NmtState>>,
     I: ClockInstant,
 {
     type Observation = NmtOutput;
@@ -374,9 +345,9 @@ where
 }
 
 
-pub struct NmtMaster<const N: usize, I: ClockInstant>(pub NmtMasterMachine<N, I>);
+pub struct NmtMaster<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>>(pub NmtMasterMachine<N, I, R>);
 
-impl<const N: usize, I: ClockInstant> MachineTrans<CANFrame> for NmtMaster<N, I>
+impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTrans<CANFrame> for NmtMaster<N, I, R>
 {
     type Observation = Option<CANFrame>;
    
