@@ -281,6 +281,11 @@ where
                     // drop this pending and notify user or log
                     let err = NmtError::Timeout { node_id };
                     self.state = NmtMasterState::Error(err);
+
+                    let maybe_resp = self.responders.remove(&NodeTarget::Node(node_id));
+                    if let Some(resp) = maybe_resp {
+                        resp.respond(None);
+                    }
                 }
             }
         }
