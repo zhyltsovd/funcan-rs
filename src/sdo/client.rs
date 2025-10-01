@@ -15,20 +15,56 @@ pub struct SDOClient<R, W, D> {
 }
 
 pub enum SDOConfig<R, W, D: Dictionary> {
-    Read(u8, D::Index, R),
-    Write(u8, D::Index, D::Object, W),
+    Read(D::Index, R),
+    Write(D::Index, D::Object, W),
+}
+
+pub enum SDOConfigResult {
+    Ok,
+    Busy,
+    Error
 }
 
 impl<R, W, D: Dictionary> SDOClient<R, W, D>
 where
-    D::Index: TryFrom<Index>,
-    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>,
+    D::Index: TryFrom<Index> + Into<Index>,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
 {
     pub fn new(node: NodeId) -> Self {
         let sdo = ClientMachine::default();
         SDOClient {node, sdo, _phantom: PhantomData}
+    }
+ 
+    pub fn config(self: &mut Self, config: SDOConfig<R, W, D>) -> SDOConfigResult {
+        match config {
+            SDOConfig::Read(ix, r) => {
+                if let Some(st) = self.sdo.observe() {
+                    if st.is_ready() {
+                        self.sdo.read(ix.into(), r);
+                        SDOConfigResult::Ok
+                    } else {
+                        SDOConfigResult::Busy
+                    }
+                } else {
+                    SDOConfigResult::Error
+                }
+            }
+
+            SDOConfig::Write(ix, x, r) => {
+                if let Some(st) = self.sdo.observe() {
+                    if st.is_ready() {
+                        self.sdo.write(ix.into(), x, r);
+                        SDOConfigResult::Ok
+                    } else {
+                        SDOConfigResult::Busy
+                    }
+                } else {
+                    SDOConfigResult::Error
+                }
+            }
+        }
     }
     
     #[inline]
@@ -56,8 +92,8 @@ where
 impl<R, W, D> MachineTrans<CANFrame> for SDOClient<R, W, D>
 where
     D: Dictionary,
-    D::Index: TryFrom<Index>,
-    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>,
+    D::Index: TryFrom<Index> + Into<Index>,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>+ IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
 {
