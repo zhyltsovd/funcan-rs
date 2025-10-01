@@ -37,6 +37,17 @@ impl NmtState {
     }
 }
 
+impl Into<NmtCommand> for NmtState {
+    fn into(self: Self) -> NmtCommand {
+        match self {
+            NmtState::Operational => NmtCommand::StartRemoteNode,
+            NmtState::Stopped => NmtCommand::StopRemoteNode,
+            NmtState::Initialization => NmtCommand::ResetNode,
+            NmtState::PreOperational => NmtCommand::ResetCommunication,
+        }
+    }
+}
+
 impl From<CANFrame> for NmtEvent {
     fn from(frame: CANFrame) -> NmtEvent {
         let node = (frame.can_cobid & NODE_MASK) as u8;
@@ -262,12 +273,7 @@ where
                     // retry
                     let target = NodeTarget::Node(node_id);
 
-                    let cmd = match pend.expected {
-                        NmtState::Operational => NmtCommand::StartRemoteNode,
-                        NmtState::Stopped => NmtCommand::StopRemoteNode,
-                        NmtState::Initialization => NmtCommand::ResetNode,
-                        NmtState::PreOperational => NmtCommand::ResetCommunication,
-                    };
+                    let cmd = pend.expected.into();
 
                     pend.sent_at = I::now();
                     pend.retries += 1;
