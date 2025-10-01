@@ -230,6 +230,11 @@ where
             });
         };
 
+        let maybe_resp = self.responders.remove(&NodeTarget::Node(node_id));
+        if let Some(resp) = maybe_resp {
+            resp.respond(Some(new_state));
+        }
+            
         self.node_states.insert(node_id, new_state);
     }
 
