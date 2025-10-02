@@ -322,6 +322,10 @@ where
                         if *target_id == node_id {
                             self.handle_response(cmd.cmd, node_id, new_state);
                         } else {
+                            let maybe_resp = self.responders.remove(&NodeTarget::Node(node_id));
+                            if let Some(resp) = maybe_resp {
+                                resp.respond(None);
+                            }
                             // raise error?
                         }
                     }
@@ -338,7 +342,14 @@ where
                     node_id: node_id,
                     node_state: new_state,
                 };
-                self.state = NmtMasterState::Error(e)
+                
+                self.state = NmtMasterState::Error(e);
+
+                let maybe_resp = self.responders.remove(&NodeTarget::Node(node_id));
+                if let Some(resp) = maybe_resp {
+                    resp.respond(None);
+                }
+
             }
 
             (NmtMasterState::Error(_e), _) => {
