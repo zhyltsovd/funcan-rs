@@ -377,6 +377,12 @@ impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTra
     fn observe(self: &mut Self) -> Self::Observation {
         let r = self.0.observe();
 
-        todo!()
+        match r {
+            NmtOutput::Command(req) => {
+                Some(req.into())
+            }
+
+            _ => None,
+        }
     }
 }
