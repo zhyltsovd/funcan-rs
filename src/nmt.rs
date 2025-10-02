@@ -17,7 +17,7 @@ pub enum NmtState {
 }
 
 impl NmtState {
-    fn to_code(self) -> u8 {
+    pub fn to_code(self) -> u8 {
         match self {
             NmtState::Initialization => 0x00,
             NmtState::Stopped => 0x04,
@@ -26,7 +26,7 @@ impl NmtState {
         }
     }
 
-    fn from_code(c: u8) -> Self {
+    pub fn from_code(c: u8) -> Self {
         match c {
             0x00 => NmtState::Initialization,
             0x04 => NmtState::Stopped,
