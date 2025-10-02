@@ -112,8 +112,6 @@ impl From<CANFrame> for NmtRequest {
     }
 }
 
-
-
 /*
 
 #[derive(Debug, Copy, Clone)]
@@ -348,7 +346,7 @@ where
                     node_id: node_id,
                     node_state: new_state,
                 };
-                
+
                 self.state = NmtMasterState::Error(e);
 
                 let maybe_resp = self.responders.remove(&NodeTarget::Node(node_id));

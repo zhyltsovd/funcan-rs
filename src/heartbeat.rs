@@ -24,7 +24,7 @@ pub struct HeartbeatMachine<const N: usize, I: ClockInstant> {
     /// Timeout
     timeout: Duration,
 }
- 
+
 impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
     pub fn new(timeout: u64) -> Self {
         Self {
@@ -34,9 +34,13 @@ impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
     }
 
     pub fn check_state<R>(self: &Self, node_id: u8, r: R)
-    where R: Responder<ObservableNodeState> {
+    where
+        R: Responder<ObservableNodeState>,
+    {
         match self.node_states.get(&node_id) {
-            None => { r.respond(ObservableNodeState::NotFound); }
+            None => {
+                r.respond(ObservableNodeState::NotFound);
+            }
 
             Some(node) => {
                 let now = I::now();
@@ -47,7 +51,7 @@ impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
                 }
             }
         }
-    } 
+    }
 }
 
 impl<const N: usize, I: ClockInstant> MachineTrans<(u8, NmtState)> for HeartbeatMachine<N, I> {
@@ -57,10 +61,13 @@ impl<const N: usize, I: ClockInstant> MachineTrans<(u8, NmtState)> for Heartbeat
         let (node_id, state) = x;
 
         let now = I::now();
-        
+
         match self.node_states.get_mut(&node_id) {
             None => {
-                let node_state = NodeState {state: state, beat: now};
+                let node_state = NodeState {
+                    state: state,
+                    beat: now,
+                };
                 self.node_states.insert(node_id, node_state);
             }
 
