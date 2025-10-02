@@ -1,10 +1,10 @@
-use core::time::Duration;
-use heapless::index_map::FnvIndexMap;
-use heapless::vec::Vec;
+//use core::time::Duration;
+//use heapless::index_map::FnvIndexMap;
+//use heapless::vec::Vec;
 
 use crate::cobid::*;
-use crate::interfaces::*;
-use crate::machine::*;
+//use crate::interfaces::*;
+//use crate::machine::*;
 use crate::raw::*;
 
 /// The possible NMT states of a node.
@@ -16,8 +16,8 @@ pub enum NmtState {
     Stopped,
 }
 
-impl NmtState {
-    pub fn to_code(self) -> u8 {
+impl Into<u8> for NmtState {
+    fn into(self) -> u8 {
         match self {
             NmtState::Initialization => 0x00,
             NmtState::Stopped => 0x04,
@@ -25,8 +25,10 @@ impl NmtState {
             NmtState::PreOperational => 0x7F,
         }
     }
+}
 
-    pub fn from_code(c: u8) -> Self {
+impl From<u8> for NmtState {
+    fn from(c: u8) -> Self {
         match c {
             0x00 => NmtState::Initialization,
             0x04 => NmtState::Stopped,
@@ -47,19 +49,19 @@ impl Into<NmtCommand> for NmtState {
         }
     }
 }
-
+/*
 impl From<CANFrame> for NmtEvent {
     fn from(frame: CANFrame) -> NmtEvent {
         let node = (frame.can_cobid & NODE_MASK) as u8;
         let code = frame.can_data[0];
-        let state = NmtState::from_code(code);
+        let state = code.into();
 
         NmtEvent::Response {
             node_id: node,
             new_state: state,
         }
     }
-}
+}*/
 
 /// High‐level NMT command request.
 #[derive(Debug, Copy, Clone)]
@@ -109,6 +111,10 @@ impl From<CANFrame> for NmtRequest {
         NmtRequest { cmd, target }
     }
 }
+
+
+
+/*
 
 #[derive(Debug, Copy, Clone)]
 pub enum NmtMasterState {
@@ -397,3 +403,5 @@ impl<const N: usize, I: ClockInstant, R: Responder<Option<NmtState>>> MachineTra
         }
     }
 }
+
+*/
