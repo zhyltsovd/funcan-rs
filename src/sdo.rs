@@ -147,12 +147,12 @@ impl TryFrom<u8> for ServerCommandSpecifier {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ClientRequest {
-    InitUpload(Index),
+    InitUpload(CanIndex),
     UploadSegment(ToggleBit),
-    InitSingleSegmentDownload(Index, u8, [u8; 4]), // index, length, data
-    InitMultipleDownload(Index, u32),              // index and length,
+    InitSingleSegmentDownload(CanIndex, u8, [u8; 4]), // index, length, data
+    InitMultipleDownload(CanIndex, u32),              // index and length,
     DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
-    AbortTransfer(Index, AbortCode),
+    AbortTransfer(CanIndex, AbortCode),
 }
 
 impl Into<[u8; 8]> for ClientRequest {
@@ -240,7 +240,7 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 
         match code {
             ClientCommandSpecifier::InitUpload => {
-                let ix = Index::read_from_slice(&req[1..4]);
+                let ix = CanIndex::read_from_slice(&req[1..4]);
                 Ok(ClientRequest::InitUpload(ix))
             }
 
@@ -250,7 +250,7 @@ impl TryFrom<[u8; 8]> for ClientRequest {
             }
 
             ClientCommandSpecifier::InitDownload => {
-                let ix = Index::read_from_slice(&req[1..4]);
+                let ix = CanIndex::read_from_slice(&req[1..4]);
                 // Determine if it's a single or multiple segment download based on s and e bits in first byte
                 let is_expedited = (req[0] >> 1) & 1 > 0;
                 let is_sized = (req[0] >> 0) & 1 > 0;
@@ -289,7 +289,7 @@ impl TryFrom<[u8; 8]> for ClientRequest {
             }
 
             ClientCommandSpecifier::AbortTransfer => {
-                let ix = Index::read_from_slice(&req[1..4]);
+                let ix = CanIndex::read_from_slice(&req[1..4]);
                 let code = (u32::from_le_bytes([req[4], req[5], req[6], req[7]])).into();
                 Ok(ClientRequest::AbortTransfer(ix, code))
             }
@@ -299,10 +299,10 @@ impl TryFrom<[u8; 8]> for ClientRequest {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerResponse {
-    UploadSingleSegment(Index, u8, [u8; 4]),
-    UploadInitMultiples(Index, u32),
+    UploadSingleSegment(CanIndex, u8, [u8; 4]),
+    UploadInitMultiples(CanIndex, u32),
     UploadMultiples(ToggleBit, bool, u8, [u8; 7]),
-    DownloadInitAck(Index),
+    DownloadInitAck(CanIndex),
     DownloadSegmentAck(ToggleBit),
 }
 
@@ -385,7 +385,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
 
         match code {
             ServerCommandSpecifier::InitUpload => {
-                let ix = Index::read_from_slice(&req[1..4]);
+                let ix = CanIndex::read_from_slice(&req[1..4]);
                 let ty = TransferType::try_from(req[0])?;
 
                 match ty {
@@ -417,7 +417,7 @@ impl TryFrom<[u8; 8]> for ServerResponse {
             }
 
             ServerCommandSpecifier::InitDownloadAck => {
-                let ix = Index::read_from_slice(&req[1..4]);
+                let ix = CanIndex::read_from_slice(&req[1..4]);
                 Ok(ServerResponse::DownloadInitAck(ix))
             }
 
@@ -437,7 +437,7 @@ mod tests {
     //----------------------------Client side tests------------------------------------------------//
     #[test]
     fn client_upload_init() {
-        let req = ClientRequest::InitUpload(Index::new(0x1000, 0x01));
+        let req = ClientRequest::InitUpload(CanIndex::new(0x1000, 0x01));
         let req_buf: [u8; 8] = req.clone().into();
 
         //CiA301 7.2.4.3.6 - SDO upload initiate
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn client_download_single_init() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
 
         let req = ClientRequest::InitSingleSegmentDownload(index, 4, [0x01, 0x02, 0x03, 0x04]);
 
@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn client_download_segment_init() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let req = ClientRequest::InitMultipleDownload(index, 10);
 
         let req_buf: [u8; 8] = req.clone().into();
@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn client_download_segment_init_unspecified_len() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let req = ClientRequest::InitMultipleDownload(index, 0);
 
         let req_buf: [u8; 8] = req.clone().into();
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn client_abort_transfer() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let req = ClientRequest::AbortTransfer(index, AbortCode::SDOProtocolTimedOut);
 
         let req_buf: [u8; 8] = req.clone().into();
@@ -561,7 +561,7 @@ mod tests {
     //----------------------------Server side tests------------------------------------------------//
     #[test]
     fn server_resp_upload_single() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let resp = ServerResponse::UploadSingleSegment(index, 2, [1, 2, 3, 4]);
 
         let resp_buf: [u8; 8] = resp.clone().into();
@@ -575,7 +575,7 @@ mod tests {
 
     #[test]
     fn server_resp_initiate_multiply_segments_with_specified_len() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let resp = ServerResponse::UploadInitMultiples(index, 20);
 
         let resp_buf: [u8; 8] = resp.clone().into();
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn server_resp_initiate_multiply_segments_with_unspecified_len() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let resp = ServerResponse::UploadInitMultiples(index, 0);
 
         let resp_buf: [u8; 8] = resp.clone().into();
@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn server_resp_download_init_ack() {
-        let index = Index::new(0x1000, 0x01);
+        let index = CanIndex::new(0x1000, 0x01);
         let resp = ServerResponse::DownloadInitAck(index);
 
         let resp_buf: [u8; 8] = resp.clone().into();

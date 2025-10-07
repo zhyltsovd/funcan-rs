@@ -19,14 +19,20 @@ impl IntoBuf for u32 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Index {
+pub struct CanIndices {
+    pub base_index: u16,
+    pub len: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanIndex {
     pub index: u16,
     pub sub: u8,
 }
 
-impl Index {
+impl CanIndex {
     pub fn new(index: u16, sub: u8) -> Self {
-        Index { index, sub }
+        Self { index, sub }
     }
     /// Writes the Index to a mutable byte slice.
     ///
@@ -62,7 +68,7 @@ impl Index {
         let index = ((buf[1] as u16) << 8) | (buf[0] as u16);
         let sub = buf[2];
 
-        Index { index, sub }
+        Self { index, sub }
     }
 }
 
@@ -80,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_index_write_to_slice() {
-        let index = Index {
+        let index = CanIndex {
             index: 0x1234,
             sub: 0x56,
         };
@@ -92,10 +98,10 @@ mod tests {
     #[test]
     fn test_index_read_from_slice() {
         let buf = [0x34, 0x12, 0x56];
-        let index = Index::read_from_slice(&buf);
+        let index = CanIndex::read_from_slice(&buf);
         assert_eq!(
             index,
-            Index {
+            CanIndex {
                 index: 0x1234,
                 sub: 0x56
             }
@@ -105,19 +111,19 @@ mod tests {
     #[test]
     fn test_index_write_read_inverse() {
         let test_index_cases = [
-            Index {
+            CanIndex {
                 index: 0x0000,
                 sub: 0x00,
             },
-            Index {
+            CanIndex {
                 index: 0xFFFF,
                 sub: 0xFF,
             },
-            Index {
+            CanIndex {
                 index: 0x1234,
                 sub: 0x56,
             },
-            Index {
+            CanIndex {
                 index: 0xABCD,
                 sub: 0xEF,
             },
@@ -126,7 +132,7 @@ mod tests {
         for &original in &test_index_cases {
             let mut buf = [0u8; 3];
             original.write_to_slice(&mut buf);
-            let read_back = Index::read_from_slice(&buf);
+            let read_back = CanIndex::read_from_slice(&buf);
             assert_eq!(
                 original, read_back,
                 "Original: {:?}, Read Back: {:?}",

@@ -6,7 +6,7 @@ use crate::sdo::*;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     StateResponseMismatch,
-    IndexMismatch(Index, Index),
+    CanIndexMismatch(CanIndex, CanIndex),
     TransferAborted(AbortCode),
     ToggleMismatch,
     BufferOverflow,
@@ -30,7 +30,7 @@ enum ClientState {
 
 /// Client context
 pub struct ClientMachine<RR, RW> {
-    index: Index,
+    index: CanIndex,
     state: ClientState,
     data_index: usize,
     read_responder: Option<RR>,
@@ -40,7 +40,7 @@ pub struct ClientMachine<RR, RW> {
 
 /// Possible final result that machine produces
 pub enum ClientResult<RR, RW> {
-    UploadCompleted(Index, [u8; 1024], usize, Option<RR>),
+    UploadCompleted(CanIndex, [u8; 1024], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
     TransferAborted(AbortCode),
 }
@@ -67,7 +67,7 @@ impl<RR, RW> Default for ClientMachine<RR, RW> {
         ClientMachine {
             read_responder: None,
             write_responder: None,
-            index: Index::new(0, 0),
+            index: CanIndex::new(0, 0),
             state: ClientState::Idle,
             data_index: 0,
             data: [0; 1024],
@@ -77,14 +77,14 @@ impl<RR, RW> Default for ClientMachine<RR, RW> {
 
 impl<RR, RW> ClientMachine<RR, RW> {
     /// Initiates SDO read
-    pub fn read(self: &mut Self, index: Index, r: RR) {
+    pub fn read(self: &mut Self, index: CanIndex, r: RR) {
         self.index = index;
         self.read_responder = Some(r);
         self.state = ClientState::InitUpload;
     }
 
     /// Initiates SDO write
-    pub fn write<T>(self: &mut Self, index: Index, t: T, r: RW)
+    pub fn write<T>(self: &mut Self, index: CanIndex, t: T, r: RW)
     where
         T: IntoBuf,
     {
@@ -118,7 +118,7 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
             ) => {
                 if res_index != self.index {
                     self.state =
-                        ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
                 } else {
                     self.data[0..4].copy_from_slice(&data);
                     self.data_index = len as usize;
@@ -130,7 +130,7 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
             (ClientState::InitUpload, ServerResponse::UploadInitMultiples(res_index, _size)) => {
                 if res_index != self.index {
                     self.state =
-                        ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
                 } else {
                     self.data_index = 0;
                     self.state = ClientState::UploadingMultiples(ToggleBit(false));
@@ -167,7 +167,7 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
             (ClientState::InitSingleDownload(_len), ServerResponse::DownloadInitAck(res_index)) => {
                 if res_index != self.index {
                     self.state =
-                        ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
                 } else {
                     self.state = ClientState::DownloadCompleted
                 }
@@ -180,7 +180,7 @@ impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
             ) => {
                 if res_index != self.index {
                     self.state =
-                        ClientState::ErrorState(Error::IndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
                 } else {
                     self.state = ClientState::DownloadingSegments(ToggleBit(false), *len);
                 }
@@ -295,7 +295,7 @@ enum ServerState {
 
 /// Server context
 pub struct ServerMachine {
-    index: Index,
+    index: CanIndex,
     state: ServerState,
     upload_data: [u8; 1024],
     upload_length: usize,
@@ -327,14 +327,14 @@ impl ServerMachine {
 /// Possible final result that server produces
 pub enum ServerResult {
     UploadCompleted,
-    DownloadCompleted(Index, [u8; 1024], usize),
+    DownloadCompleted(CanIndex, [u8; 1024], usize),
     TransferAborted(AbortCode),
 }
 
 /// All observations of server machine
 pub enum ServerOutput {
     Output(ServerResponse),
-    AwaitingData(Index),
+    AwaitingData(CanIndex),
     Done(ServerResult),
     Error(Error),
     Ready,
@@ -343,7 +343,7 @@ pub enum ServerOutput {
 impl Default for ServerMachine {
     fn default() -> Self {
         ServerMachine {
-            index: Index::new(0, 0),
+            index: CanIndex::new(0, 0),
             state: ServerState::Idle,
             upload_data: [0; 1024],
             upload_length: 0,
@@ -509,7 +509,7 @@ mod tests {
     fn sdo_upload_u32_value() {
         let mut client: ClientMachine<(), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
-        let index = Index::new(0x6068, 0x00);
+        let index = CanIndex::new(0x6068, 0x00);
         let value: u32 = 5000;
 
         let fake_responder = ();
@@ -539,7 +539,7 @@ mod tests {
                                     panic!("Server state mismatch");
                                 }
                             } else {
-                                panic!("Index mismatch");
+                                panic!("CanIndex mismatch");
                             }
                         }
 
@@ -588,7 +588,7 @@ mod tests {
     fn sdo_download_u32_value() {
         let mut client: ClientMachine<(), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
-        let index = Index::new(0x6068, 0x00);
+        let index = CanIndex::new(0x6068, 0x00);
         let value: u32 = 5000;
 
         let fake_responder = ();
