@@ -27,7 +27,7 @@ pub enum SDOConfigResult {
 
 impl<const N: usize, R, W, D: Dictionary> SDOClient<N, R, W, D>
 where
-    D::Index: TryFrom<CanIndex> + Into<CanIndex>,
+    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
@@ -96,7 +96,7 @@ where
 impl<const N: usize, R, W, D> MachineTrans<CANFrame> for SDOClient<N, R, W, D>
 where
     D: Dictionary,
-    D::Index: TryFrom<CanIndex> + Into<CanIndex>,
+    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,

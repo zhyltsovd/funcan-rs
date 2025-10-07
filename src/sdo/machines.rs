@@ -30,7 +30,8 @@ enum ClientState {
 
 /// Client context
 pub struct ClientMachine<const N: usize, RR, RW> {
-    index: CanIndex,
+    current_index: CanIndex,
+    current_mode: Option<usize>,
     state: ClientState,
     data_index: usize,
     read_responder: Option<RR>,
@@ -67,7 +68,8 @@ impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
         ClientMachine {
             read_responder: None,
             write_responder: None,
-            index: CanIndex::new(0, 0),
+            current_index: CanIndex::new(0, 0),
+            current_mode: None,
             state: ClientState::Idle,
             data_index: 0,
             data: [0; N],
@@ -77,18 +79,20 @@ impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
 
 impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     /// Initiates SDO read
-    pub fn read(self: &mut Self, index: CanIndex, r: RR) {
-        self.index = index;
+    pub fn read(self: &mut Self, indices: CanIndices, r: RR) {
+        self.current_index = CanIndex::new(indices.base_index, 0);
+        self.current_mode = indices.can_type.is_compound();
         self.read_responder = Some(r);
         self.state = ClientState::InitUpload;
     }
 
     /// Initiates SDO write
-    pub fn write<T>(self: &mut Self, index: CanIndex, t: T, r: RW)
+    pub fn write<T>(self: &mut Self, indices: CanIndices, t: T, r: RW)
     where
         T: IntoBuf,
     {
-        self.index = index;
+        self.current_index = CanIndex::new(indices.base_index, 0);
+        self.current_mode = indices.can_type.is_compound();
         let n = t.into_buf(&mut self.data);
         self.write_responder = Some(r);
         if n <= 4 {
@@ -116,21 +120,21 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
                 ClientState::InitUpload,
                 ServerResponse::UploadSingleSegment(res_index, len, data),
             ) => {
-                if res_index != self.index {
+                if res_index != self.current_index {
                     self.state =
-                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.current_index));
                 } else {
                     self.data[0..4].copy_from_slice(&data);
                     self.data_index = len as usize;
-                    self.state = ClientState::SingleSegmentUploaded;
+                    self.state = ClientState::SingleSegmentUploaded; 
                 }
             }
 
             // InitUpload -> InitMupltipleSegments
             (ClientState::InitUpload, ServerResponse::UploadInitMultiples(res_index, _size)) => {
-                if res_index != self.index {
+                if res_index != self.current_index {
                     self.state =
-                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.current_index));
                 } else {
                     self.data_index = 0;
                     self.state = ClientState::UploadingMultiples(ToggleBit(false));
@@ -165,9 +169,9 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
             // ---- Download Handling ----
             // InitDownload -> DownloadInitAck (single segment)
             (ClientState::InitSingleDownload(_len), ServerResponse::DownloadInitAck(res_index)) => {
-                if res_index != self.index {
+                if res_index != self.current_index {
                     self.state =
-                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.current_index));
                 } else {
                     self.state = ClientState::DownloadCompleted
                 }
@@ -178,9 +182,9 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
                 ClientState::InitMultipleDownload(len),
                 ServerResponse::DownloadInitAck(res_index),
             ) => {
-                if res_index != self.index {
+                if res_index != self.current_index {
                     self.state =
-                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.index));
+                        ClientState::ErrorState(Error::CanIndexMismatch(res_index, self.current_index));
                 } else {
                     self.state = ClientState::DownloadingSegments(ToggleBit(false), *len);
                 }
@@ -214,13 +218,13 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
             ClientState::Idle => Some(ClientOutput::Ready),
 
             ClientState::InitUpload => {
-                Some(ClientOutput::Output(ClientRequest::InitUpload(self.index)))
+                Some(ClientOutput::Output(ClientRequest::InitUpload(self.current_index)))
             }
 
             ClientState::SingleSegmentUploaded => {
                 let resp = core::mem::replace(&mut self.read_responder, None);
                 Some(ClientOutput::Done(ClientResult::UploadCompleted(
-                    self.index,
+                    self.current_index,
                     self.data.clone(),
                     self.data_index,
                     resp,
@@ -235,7 +239,7 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
                 let resp = core::mem::replace(&mut self.read_responder, None);
 
                 Some(ClientOutput::Done(ClientResult::UploadCompleted(
-                    self.index,
+                    self.current_index,
                     self.data.clone(),
                     self.data_index,
                     resp,
@@ -247,12 +251,12 @@ impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, R
                 data.copy_from_slice(&self.data[0..*len]);
 
                 Some(ClientOutput::Output(
-                    ClientRequest::InitSingleSegmentDownload(self.index, *len as u8, data),
+                    ClientRequest::InitSingleSegmentDownload(self.current_index, *len as u8, data),
                 ))
             }
 
             ClientState::InitMultipleDownload(len) => Some(ClientOutput::Output(
-                ClientRequest::InitMultipleDownload(self.index, *len as u32),
+                ClientRequest::InitMultipleDownload(self.current_index, *len as u32),
             )),
 
             ClientState::DownloadingSegments(toggle, n) => {
@@ -509,7 +513,7 @@ mod tests {
     fn sdo_upload_u32_value() {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
-        let index = CanIndex::new(0x6068, 0x00);
+        let index = CanIndices {base_index: 0x6068, can_type: CanType::Base};
         let value: u32 = 5000;
 
         let fake_responder = ();
@@ -530,7 +534,7 @@ mod tests {
                             client.transit(resp);
                         }
                         ServerOutput::AwaitingData(sindex) => {
-                            if sindex == index {
+                            if sindex.index == index.base_index {
                                 let data: [u8; 4] = value.to_le_bytes();
                                 server.upload_data(&data);
                                 if let Some(ServerOutput::Output(resp)) = server.observe() {
@@ -588,7 +592,7 @@ mod tests {
     fn sdo_download_u32_value() {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
-        let index = CanIndex::new(0x6068, 0x00);
+        let index = CanIndices {base_index: 0x6068, can_type: CanType::Base};
         let value: u32 = 5000;
 
         let fake_responder = ();
@@ -614,7 +618,7 @@ mod tests {
 
                         ServerOutput::Done(res) => {
                             if let ServerResult::DownloadCompleted(dindex, data, n) = res {
-                                assert_eq!(index, dindex);
+                                assert_eq!(index.base_index, dindex.index);
                                 assert_eq!(n, 4);
                                 let downloaded_value =
                                     u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
