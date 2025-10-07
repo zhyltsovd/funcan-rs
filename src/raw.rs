@@ -134,7 +134,7 @@ pub struct CanFrame {
     pub cobid: CobId,
 
     /// The length of the CAN frame
-    pub can_len: usize,
+    pub len: usize,
 
     /// The data of the CAN frame.
     ///
@@ -146,7 +146,7 @@ impl fmt::Debug for CanFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cobid: u32 = self.cobid.into();
         write!(f, "{:#X}: [", cobid)?;
-        for i in 0..self.can_len {
+        for i in 0..self.len {
             if i > 0 {
                 write!(f, ", ")?;
             }
@@ -161,7 +161,7 @@ impl Default for CanFrame {
     fn default() -> Self {
         Self {
             cobid: CobId::ManufacturerSpecific(0xffff),
-            can_len: 0,
+            len: 0,
             data: [0; 8],
         }
     }
@@ -181,7 +181,7 @@ impl CanFrame {
         buffer[0..4].copy_from_slice(&cobid.to_le_bytes());
 
         // Write length
-        buffer[4] = self.can_len as u8;
+        buffer[4] = self.len as u8;
 
         // Fill 3 bytes with zero (padding)
         buffer[5..8].fill(0);
@@ -206,14 +206,14 @@ impl CanFrame {
         let cobid = u32::from_le_bytes(buffer[0..4].try_into().unwrap()).into();
 
         // Read length
-        let can_len = buffer[4] as usize;
+        let len = buffer[4] as usize;
 
         // Read CAN data
         let data = buffer[8..16].try_into().unwrap();
 
         CanFrame {
             cobid,
-            can_len,
+            len,
             data,
         }
     }
@@ -227,7 +227,7 @@ mod tests {
     fn test_serialization_deserialization() {
         let frame = CanFrame {
             cobid: CobId::SdoRequest(2),
-            can_len: 8,
+            len: 8,
             data: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11],
         };
 
