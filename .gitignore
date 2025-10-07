@@ -2,6 +2,7 @@
 
 debug/
 target/
+obsolete/
 
 Cargo.lock
 
