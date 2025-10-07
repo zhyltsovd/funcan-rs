@@ -29,31 +29,31 @@ enum ClientState {
 }
 
 /// Client context
-pub struct ClientMachine<RR, RW> {
+pub struct ClientMachine<const N: usize, RR, RW> {
     index: CanIndex,
     state: ClientState,
     data_index: usize,
     read_responder: Option<RR>,
     write_responder: Option<RW>,
-    data: [u8; 1024],
+    data: [u8; N],
 }
 
 /// Possible final result that machine produces
-pub enum ClientResult<RR, RW> {
-    UploadCompleted(CanIndex, [u8; 1024], usize, Option<RR>),
+pub enum ClientResult<const N: usize, RR, RW> {
+    UploadCompleted(CanIndex, [u8; N], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
     TransferAborted(AbortCode),
 }
 
 /// All possible observations of client machine
-pub enum ClientOutput<RR, RW> {
+pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),
-    Done(ClientResult<RR, RW>),
+    Done(ClientResult<N, RR, RW>),
     Error(Error),
     Ready,
 }
 
-impl<RR, RW> ClientOutput<RR, RW> {
+impl<const N: usize, RR, RW> ClientOutput<N, RR, RW> {
     pub fn is_ready(self: &Self) -> bool {
         match self {
             ClientOutput::Output(_) => false,
@@ -62,7 +62,7 @@ impl<RR, RW> ClientOutput<RR, RW> {
     }
 }
 
-impl<RR, RW> Default for ClientMachine<RR, RW> {
+impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
     fn default() -> Self {
         ClientMachine {
             read_responder: None,
@@ -70,12 +70,12 @@ impl<RR, RW> Default for ClientMachine<RR, RW> {
             index: CanIndex::new(0, 0),
             state: ClientState::Idle,
             data_index: 0,
-            data: [0; 1024],
+            data: [0; N],
         }
     }
 }
 
-impl<RR, RW> ClientMachine<RR, RW> {
+impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     /// Initiates SDO read
     pub fn read(self: &mut Self, index: CanIndex, r: RR) {
         self.index = index;
@@ -100,8 +100,8 @@ impl<RR, RW> ClientMachine<RR, RW> {
 }
 
 /// Finite State Machine implementation
-impl<RR, RW> MachineTrans<ServerResponse> for ClientMachine<RR, RW> {
-    type Observation = Option<ClientOutput<RR, RW>>;
+impl<const N: usize, RR, RW> MachineTrans<ServerResponse> for ClientMachine<N, RR, RW> {
+    type Observation = Option<ClientOutput<N, RR, RW>>;
 
     fn initial(self: &mut Self) {
         self.state = ClientState::Idle;
@@ -507,7 +507,7 @@ mod tests {
 
     #[test]
     fn sdo_upload_u32_value() {
-        let mut client: ClientMachine<(), ()> = ClientMachine::default();
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
         let index = CanIndex::new(0x6068, 0x00);
         let value: u32 = 5000;
@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn sdo_download_u32_value() {
-        let mut client: ClientMachine<(), ()> = ClientMachine::default();
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server = ServerMachine::default();
         let index = CanIndex::new(0x6068, 0x00);
         let value: u32 = 5000;

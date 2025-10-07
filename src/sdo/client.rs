@@ -8,9 +8,9 @@ use crate::raw::*;
 use crate::sdo::machines::*;
 use crate::sdo::*;
 
-pub struct SDOClient<R, W, D> {
+pub struct SDOClient<const N: usize, R, W, D> {
     pub node: NodeId,
-    pub sdo: ClientMachine<R, W>,
+    pub sdo: ClientMachine<N, R, W>,
     _phantom: PhantomData<D>,
 }
 
@@ -25,7 +25,7 @@ pub enum SDOConfigResult {
     Error,
 }
 
-impl<R, W, D: Dictionary> SDOClient<R, W, D>
+impl<const N: usize, R, W, D: Dictionary> SDOClient<N, R, W, D>
 where
     D::Index: TryFrom<CanIndex> + Into<CanIndex>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
@@ -72,7 +72,7 @@ where
     }
 
     #[inline]
-    fn handle_sdo_result(self: &mut Self, r: ClientResult<R, W>) {
+    fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) {
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
                 if let Ok(index) = <D as Dictionary>::Index::try_from(ix) {
@@ -93,7 +93,7 @@ where
     }
 }
 
-impl<R, W, D> MachineTrans<CANFrame> for SDOClient<R, W, D>
+impl<const N: usize, R, W, D> MachineTrans<CANFrame> for SDOClient<N, R, W, D>
 where
     D: Dictionary,
     D::Index: TryFrom<CanIndex> + Into<CanIndex>,
