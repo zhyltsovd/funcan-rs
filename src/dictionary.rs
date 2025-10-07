@@ -19,9 +19,26 @@ impl IntoBuf for u32 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanType {
+    Base,
+    Array(usize),
+    Struct(usize),
+}
+
+impl CanType {
+    pub fn is_compound(self: &Self) -> Option<usize> {
+        match self {
+            CanType::Base => None,
+            CanType::Array(n) => Some(*n),
+            CanType::Struct(n) => Some(*n),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanIndices {
     pub base_index: u16,
-    pub len: usize,
+    pub can_type: CanType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
