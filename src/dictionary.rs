@@ -85,3 +85,71 @@ pub trait Dictionary {
     fn set(self: &mut Self, x: Self::Object);
     fn get(self: &Self, ix: &Self::Index) -> Self::Object;
 }
+
+pub trait DictionaryValue<D: Dictionary>: TryFrom<D::Object> {
+    fn index() -> D::Index;
+}
+
+//---------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_index_write_to_slice() {
+        let index = CanIndex {
+            base: 0x1234,
+            sub: 0x56,
+        };
+        let mut buf = [0u8; 3];
+        index.write_to_slice(&mut buf);
+        assert_eq!(buf, [0x34, 0x12, 0x56]);
+    }
+
+    #[test]
+    fn test_index_read_from_slice() {
+        let buf = [0x34, 0x12, 0x56];
+        let index = CanIndex::read_from_slice(&buf);
+        assert_eq!(
+            index,
+            CanIndex {
+                base: 0x1234,
+                sub: 0x56
+            }
+        );
+    }
+
+    #[test]
+    fn test_index_write_read_inverse() {
+        let test_index_cases = [
+            CanIndex {
+                base: 0x0000,
+                sub: 0x00,
+            },
+            CanIndex {
+                base: 0xFFFF,
+                sub: 0xFF,
+            },
+            CanIndex {
+                base: 0x1234,
+                sub: 0x56,
+            },
+            CanIndex {
+                base: 0xABCD,
+                sub: 0xEF,
+            },
+        ];
+
+        for &original in &test_index_cases {
+            let mut buf = [0u8; 3];
+            original.write_to_slice(&mut buf);
+            let read_back = CanIndex::read_from_slice(&buf);
+            assert_eq!(
+                original, read_back,
+                "Original: {:?}, Read Back: {:?}",
+                original, read_back
+            );
+        }
+    }
+}
