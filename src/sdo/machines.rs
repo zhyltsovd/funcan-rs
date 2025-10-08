@@ -77,11 +77,6 @@ impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
 }
 
 impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
-    fn init_upload(self: &mut Self) -> ClientOutput<N, RR, RW> {
-        self.state = ClientState::InitUploading;
-        ClientOutput::Output(ClientRequest::InitUpload(self.current_index))
-    }
-
     
     /// Initiates SDO read
     pub fn read(self: &mut Self, indices: CanIndices, r: RR) -> ClientOutput<N, RR, RW> {
@@ -101,6 +96,15 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         let n = t.into_buf(&mut self.data);
         self.write_responder = Some(r);
         
+        self.init_download(n)
+    }
+
+    fn init_upload(self: &mut Self) -> ClientOutput<N, RR, RW> {
+        self.state = ClientState::InitUploading;
+        ClientOutput::Output(ClientRequest::InitUpload(self.current_index))
+    }
+ 
+    fn init_download(self: &mut Self, n: usize) -> ClientOutput<N, RR, RW> {
         let req = if n <= 4 {
             self.state = ClientState::InitSingleDownload(n);
             let mut data = [0; 4];
@@ -114,7 +118,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
 
         ClientOutput::Output(req)
     }
-
+        
     fn output_data(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientResult::*;
         use crate::sdo::machines::ClientOutput::*;
@@ -151,10 +155,10 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 
     fn transit(self: &mut Self, response: ServerResponse) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientState::*;
-        // use crate::sdo::ClientRequest::*;
+        use crate::sdo::ClientRequest::*;
         use crate::sdo::ServerResponse::*;
         use crate::sdo::machines::ClientOutput::*;
-        use crate::sdo::machines::ClientResult::*;
+        //use crate::sdo::machines::ClientResult::*;
      
         match (&self.state, response) {
             (InitUploading, UploadSingleSegment(res_index, len, data)) => {
