@@ -115,7 +115,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         ClientOutput::Output(req)
     }
 
-    pub fn output_data(self: &mut Self) -> ClientOutput<N, RR, RW> {
+    fn output_data(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientResult::*;
         use crate::sdo::machines::ClientOutput::*;
             
@@ -127,12 +127,23 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
                             resp);
         Done(res)
     }
+
+    fn continue_uploading(self: &mut Self) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientState::*;
+        
+        let _ = self.current_mode.pop();
+        if self.current_mode.len() == 0 {   
+            self.state = Idle;
+            self.output_data()
+        } else {
+            self.current_index.inc_sub();
+            self.init_upload()
+        }
+    }
 }
 
 /// Finite State Machine implementation
 impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW>> for ClientMachine<N, RR, RW> {
-
-    
     fn initiate(self: &mut Self) {
         self.state = ClientState::Idle;
         self.data_index = 0;
@@ -140,10 +151,11 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 
     fn transit(self: &mut Self, response: ServerResponse) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientState::*;
+        use crate::sdo::ClientRequest::*;
         use crate::sdo::ServerResponse::*;
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientResult::*;
-    
+     
         match (&self.state, response) {
             (InitUploading, UploadSingleSegment(res_index, len, data)) => {
                 if res_index != self.current_index {
@@ -152,17 +164,44 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                 } else {
                     self.data[0..4].copy_from_slice(&data);
                     self.data_index += len as usize;
-                    let _ = self.current_mode.pop();
-                    if self.current_mode.len() == 0 {   
-                        self.state = Idle;
-                        self.output_data()
-                    } else {
-                        self.current_index.inc_sub();
-                        self.init_upload()
-                    }
-                    
+
+                    self.continue_uploading()
                 }
             },
+
+            (InitUploading, ServerResponse::UploadInitMultiples(res_index, _size)) => {
+                if res_index != self.current_index {
+                    self.state = Idle;
+                    Error(SdoError::CanIndexMismatch(res_index, self.current_index))
+                } else {
+                    self.data_index = 0;
+                    let t = ToggleBit(false);
+                    self.state = UploadingMultiples(t);
+                    Output(UploadSegment(t))                                   
+                }
+            }
+
+            (UploadingMultiples(toggle), UploadMultiples(res_toggle, end, len, data)) => {
+                if res_toggle != *toggle {
+                    Error(SdoError::ToggleMismatch)
+                } else {
+                    let idx = self.data_index;
+                    let data_len = len as usize;
+                    if idx + data_len > self.data.len() {
+                        Error(SdoError::BufferOverflow)
+                    } else {
+                        self.data[idx..idx + data_len].copy_from_slice(&data[0..data_len]);
+                        self.data_index = idx + data_len;
+                        if end {
+                            self.continue_uploading()
+                        } else {
+                            let new_toggle = !*toggle;
+                            self.state = UploadingMultiples(new_toggle);
+                            Output(UploadSegment(new_toggle))
+                        }
+                    }
+                }
+            }
         }
     }
 }
