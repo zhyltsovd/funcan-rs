@@ -70,7 +70,8 @@ impl<const N: usize, I: ClockInstant> MealyMachine<(u8, NmtState), ()> for Heart
                     state: state,
                     beat: now,
                 };
-                self.node_states.insert(node_id, node_state);
+
+                let _ = self.node_states.insert(node_id, node_state);
             }
 
             Some(node) => {
