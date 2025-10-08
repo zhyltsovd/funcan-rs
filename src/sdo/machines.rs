@@ -151,7 +151,7 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 
     fn transit(self: &mut Self, response: ServerResponse) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientState::*;
-        use crate::sdo::ClientRequest::*;
+        // use crate::sdo::ClientRequest::*;
         use crate::sdo::ServerResponse::*;
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientResult::*;
