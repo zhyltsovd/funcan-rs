@@ -4,7 +4,6 @@
 
 use core::fmt;
 
-
 /// Enum for every CANopen‐defined COB-ID
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CobId {
