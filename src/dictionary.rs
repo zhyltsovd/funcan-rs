@@ -75,3 +75,13 @@ impl CanIndex {
         Self { base, sub }
     }
 }
+
+//---------------------------------------------------------------------------------------------------
+
+pub trait Dictionary {
+    type Index: Sized;
+    type Object: Sized;
+
+    fn set(self: &mut Self, x: Self::Object);
+    fn get(self: &Self, ix: &Self::Index) -> Self::Object;
+}
