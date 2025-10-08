@@ -210,11 +210,7 @@ impl CanFrame {
         // Read CAN data
         let data = buffer[8..16].try_into().unwrap();
 
-        CanFrame {
-            cobid,
-            len,
-            data,
-        }
+        CanFrame { cobid, len, data }
     }
 }
 

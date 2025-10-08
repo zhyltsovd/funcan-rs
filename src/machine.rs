@@ -1,4 +1,3 @@
-
 pub trait MealyMachine<X, Y> {
     fn initiate(self: &mut Self);
     fn transit(self: &mut Self, x: X) -> Y;
@@ -12,7 +11,7 @@ pub struct MorphMachine<'a, M, U, V, X, Y> {
 
 impl<'a, M, U, V, X, Y> MealyMachine<X, Y> for MorphMachine<'a, M, U, V, X, Y>
 where
-    M: MealyMachine<U, V>
+    M: MealyMachine<U, V>,
 {
     fn initiate(self: &mut Self) {
         self.machine.initiate();
