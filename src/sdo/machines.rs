@@ -308,17 +308,17 @@ enum ServerState {
 }
 
 /// Server context
-pub struct ServerMachine {
+pub struct ServerMachine<const N: usize> {
     index: CanIndex,
     state: ServerState,
-    upload_data: [u8; 1024],
+    upload_data: [u8; N],
     upload_length: usize,
-    download_data: [u8; 1024],
+    download_data: [u8; N],
     download_length: usize,
     download_position: usize,
 }
 
-impl ServerMachine {
+impl<const N: usize> ServerMachine<N> {
     fn upload_data(self: &mut Self, data: &[u8]) {
         if let ServerState::AwaitingData(b) = self.state {
             let n = data.len();
@@ -335,5 +335,46 @@ impl ServerMachine {
                 };
             }
         }
+    }
+}
+
+/// Possible final result that server produces
+pub enum ServerResult<const N: usize> {
+    UploadCompleted,
+    DownloadCompleted(CanIndex, [u8; N], usize),
+    TransferAborted(AbortCode),
+}
+
+/// All observations of server machine
+pub enum ServerOutput<const N: usize> {
+    Output(ServerResponse),
+    AwaitingData(CanIndex),
+    Done(ServerResult<N>),
+    Error(Error),
+    Ready,
+}
+
+impl<const N: usize> Default for ServerMachine<N> {
+    fn default() -> Self {
+        ServerMachine {
+            index: CanIndex::new(0, 0),
+            state: ServerState::Idle,
+            upload_data: [0; N],
+            upload_length: 0,
+            download_data: [0; N],
+            download_length: 0,
+            download_position: 0,
+        }
+    }
+}
+
+impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMachine<N> {
+    fn initiate(self: &mut Self) {
+        self.state = ServerState::Idle;
+        self.download_position = 0;
+    }
+
+    fn transit(self: &mut Self, request: ClientRequest) -> ServerOutput<N> {
+        todo!()
     }
 }
