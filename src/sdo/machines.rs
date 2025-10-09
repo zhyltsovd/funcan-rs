@@ -21,8 +21,8 @@ enum ClientState {
     UploadingMultiples(ToggleBit),
 //    MultiplesUploaded,
 
-    InitSingleDownload(usize),
-    InitMultipleDownload(usize),
+    InitiateSingleDownload(usize),
+    InitiateMultipleDownload(usize),
     DownloadingSegments(ToggleBit, usize),
 //    DownloadCompleted,
 }
@@ -106,13 +106,13 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
  
     fn init_download(self: &mut Self, n: usize) -> ClientOutput<N, RR, RW> {
         let req = if n <= 4 {
-            self.state = ClientState::InitSingleDownload(n);
+            self.state = ClientState::InitiateSingleDownload(n);
             let mut data = [0; 4];
             data.copy_from_slice(&self.data[0..n]);
             
             ClientRequest::InitSingleSegmentDownload(self.current_index, n as u8, data)
         } else {
-            self.state = ClientState::InitMultipleDownload(n);
+            self.state = ClientState::InitiateMultipleDownload(n);
             ClientRequest::InitMultipleDownload(self.current_index, n as u32)        
         };
 
@@ -145,12 +145,41 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         }
     }
 
+    fn continue_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientState::*;
+        
+        let _ = self.current_mode.pop();
+        if self.current_mode.len() == 0 {   
+            self.state = Idle;
+            self.complete_downloading()
+        } else {
+            self.current_index.inc_sub();
+            self.init_download(self.current_mode[0] as usize)
+        }
+    }
+
     fn complete_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientResult::*;
         
         let resp = core::mem::replace(&mut self.write_responder, None);
         Done(DownloadCompleted(resp))
+    }
+
+    fn download_segment(self: &mut Self, t: ToggleBit, len: usize) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientOutput::*;
+        use crate::sdo::ClientRequest::*;
+
+        self.state = ClientState::DownloadingSegments(t, len);
+        
+        // Prepare data segment to download
+        let mut data = [0u8; 7];
+        let ix0 = self.data_index;
+        let ix1 = (ix0 + 7).min(len);
+        let end = self.data_index + 7 >= len;
+        
+        data.copy_from_slice(&self.data[ix0..ix1]);
+        Output(DownloadSegment(t, end, 7, data))
     }
 }
 
@@ -219,13 +248,91 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 
             // ---- Download Handling ----
                         
-            (InitSingleDownload(_len), DownloadInitAck(res_index)) => {
+            (InitiateSingleDownload(_len), DownloadInitAck(res_index)) => {
                 self.state = Idle;
                 if res_index != self.current_index {
                     Error(SdoError::CanIndexMismatch(res_index, self.current_index))
                 } else {
                     self.complete_downloading()
                 }
+            }
+
+            (InitiateMultipleDownload(len), DownloadInitAck(res_index)) => {
+                if res_index != self.current_index {
+                    self.state = Idle;
+                    Error(SdoError::CanIndexMismatch(res_index, self.current_index))
+                } else {
+                    let t = ToggleBit(false);
+                    self.download_segment(t, *len)
+                }
+            }
+
+            (DownloadingSegments(toggle, n), DownloadSegmentAck(res_toggle)) => {
+                if res_toggle != *toggle {
+                    self.state = Idle;
+                    Error(SdoError::ToggleMismatch)
+                } else {
+                    if self.data_index + 7 < *n {
+                        let new_toggle = !*toggle;
+                        self.data_index = self.data_index + 7;
+                        self.download_segment(new_toggle, *n)
+                    } else {
+                        self.continue_downloading()
+                    }
+                }
+            }
+
+            // Default: Unexpected response
+            (_state, _response) => {
+                Error(SdoError::StateResponseMismatch)
+            }
+
+        }
+        
+    }
+} 
+  
+/// Server states
+enum ServerState {
+    Idle,
+    AwaitingData(bool),
+    UploadingSingleSegment,
+    UploadingMultipleSegments {
+        response_toggle: ToggleBit,
+        expected_next_toggle: ToggleBit,
+        position: usize,
+    },
+    DownloadingSingleSegment,
+    DownloadingMultipleSegments(ToggleBit, usize),
+    ErrorState(Error),
+}
+
+/// Server context
+pub struct ServerMachine {
+    index: CanIndex,
+    state: ServerState,
+    upload_data: [u8; 1024],
+    upload_length: usize,
+    download_data: [u8; 1024],
+    download_length: usize,
+    download_position: usize,
+}
+
+impl ServerMachine {
+    fn upload_data(self: &mut Self, data: &[u8]) {
+        if let ServerState::AwaitingData(b) = self.state {
+            let n = data.len();
+            self.upload_length = n;
+            self.upload_data[0..n].copy_from_slice(data);
+
+            if b {
+                self.state = ServerState::UploadingSingleSegment;
+            } else {
+                self.state = ServerState::UploadingMultipleSegments {
+                    response_toggle: ToggleBit(false),
+                    expected_next_toggle: ToggleBit(true),
+                    position: 0,
+                };
             }
         }
     }
