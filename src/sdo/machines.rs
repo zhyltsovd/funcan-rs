@@ -83,6 +83,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     
     /// Initiates SDO read
     pub fn read(self: &mut Self, indices: CanIndices, r: RR) -> ClientOutput<N, RR, RW> {
+        self.data_index = 0;
         self.current_index = indices.base_index.into();
         self.current_mode = indices.can_type.is_compound();
         self.read_responder = Some(r);
@@ -94,6 +95,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     where
         T: IntoBuf,
     {
+        self.data_index = 0;
         self.current_index = indices.base_index.into();
         self.current_mode = indices.can_type.is_compound();
         let n = t.into_buf(&mut self.data);
@@ -208,7 +210,7 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                     self.state = Idle;
                     Error(SdoError::CanIndexMismatch(res_index, self.current_index))
                 } else {
-                    self.data[0..4].copy_from_slice(&data);
+                    self.data[self.data_index .. self.data_index + 4].copy_from_slice(&data);
                     self.data_index += len as usize;
 
                     self.continue_uploading()
@@ -220,7 +222,7 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                     self.state = Idle;
                     Error(SdoError::CanIndexMismatch(res_index, self.current_index))
                 } else {
-                    self.data_index = 0;
+                    //self.data_index = 0;
                     let t = ToggleBit(false);
                     self.state = UploadingMultiples(t);
                     Output(UploadSegment(t))                                   
