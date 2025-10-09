@@ -331,18 +331,17 @@ impl<const N: usize> ServerMachine<N> {
             ServerResponse::UploadMultiples(response_toggle, end, data_len as u8, data);
         if end {
             self.state = ServerState::Idle;
+            ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
         } else {
             self.state = ServerState::UploadingMultipleSegments {
                 response_toggle: response_toggle,
                 position: position,
             };
-
+            ServerOutput::Output(response)
         }
         
-        ServerOutput::Output(response)
     }
-    
-    
+        
     pub fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ServerResponse::*;
@@ -364,8 +363,8 @@ impl<const N: usize> ServerMachine<N> {
                     .copy_from_slice(&self.upload_data[0..self.upload_length]);
                 let response =
                     UploadSingleSegment(self.index, self.upload_length as u8, data);
-                Output(response)
-                
+                //Output(response)
+                ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
             } else {
                 let response_toggle = ToggleBit(false);
                 self.continue_uploading(response_toggle, 0)
@@ -378,6 +377,7 @@ impl<const N: usize> ServerMachine<N> {
 }
 
 /// Possible final result that server produces
+#[derive(Debug)]
 pub enum ServerResult<const N: usize> {
     UploadCompleted,
     DownloadCompleted(CanIndex, [u8; N], usize),
@@ -387,8 +387,8 @@ pub enum ServerResult<const N: usize> {
 /// All observations of server machine
 pub enum ServerOutput<const N: usize> {
     Output(ServerResponse),
+    FinalOutput(ServerResponse, ServerResult<N>),
     Data(CanIndex),
-    Done(ServerResult<N>),
     Error(SdoError),
     Ready,
 }
@@ -418,7 +418,7 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
         use crate::sdo::ClientRequest::*;
         use crate::sdo::machines::ServerOutput::*;
         use crate::sdo::ServerResponse::*;
-        //use crate::sdo::machines::ClientOutput::*;
+        use crate::sdo::machines::ServerResult::*;
 
         match (&self.state, request) {
             (Idle, InitUpload(index)) => {
@@ -443,7 +443,9 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 self.download_data[0..len as usize].copy_from_slice(&data[0..len as usize]);
                 self.download_length = len as usize;
                 let response = DownloadInitAck(index);
-                Output(response)
+                let result = DownloadCompleted(self.index, self.download_data.clone(), self.download_length);
+                    
+                FinalOutput(response, result)
             }
 
             (Idle, InitMultipleDownload(index, length)) => {
@@ -542,7 +544,13 @@ mod tests {
                             }
                         }
 
-                        ServerOutput::Done(_res) => {
+                        ServerOutput::FinalOutput(resp, result) => {
+                            client_out = client.transit(resp.clone());
+                            if let ServerResult::UploadCompleted = result {
+                                continue;
+                            } else {
+                                panic!("Wrong final upload result: {:?}", result);
+                            }
                             
                         }
 
@@ -616,16 +624,18 @@ mod tests {
                             panic!("State mismatch");
                         }
 
-                        ServerOutput::Done(res) => {
-                            if let ServerResult::DownloadCompleted(dindex, data, n) = res {
+                        ServerOutput::FinalOutput(resp, result) => {
+                            client_out = client.transit(resp.clone());
+                        
+                            if let ServerResult::DownloadCompleted(dindex, data, n) = result {
                                 assert_eq!(base_index.0, dindex.base);
                                 assert_eq!(n, 4);
                                 let downloaded_value =
                                     u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
                                 assert_eq!(downloaded_value, value);
                             } else {
-                                panic!("Wrong result");
-                            }
+                                panic!("Wrong result download result: {:?}", result);
+                            } 
                         }
 
                         ServerOutput::Error(err) => {
@@ -700,8 +710,72 @@ mod tests {
 
         let mut gasoline = 10;
 
-        //while gasoline > 0 {
-        //    let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
-        //}
+        while gasoline > 0 {
+            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            
+            match out {
+                ClientOutput::Output(req) => {
+                    
+                    let server_out = server.transit(req); 
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client_out = client.transit(resp);
+                        }
+                        ServerOutput::Data(_) => {
+                            panic!("State mismatch");
+                        }
+
+                        ServerOutput::FinalOutput(resp, result) => {
+                            client_out = client.transit(resp.clone());
+                            if let ServerResult::DownloadCompleted(dindex, data, n) = result {
+                                assert_eq!(base_index.0, dindex.base);
+                                assert_eq!(n, 4);
+                                
+                                let p0 = data[0];
+                                let p1 = u16::from_le_bytes([data[1], data[2]]);
+                                let p2 = data[3];
+                                let downloaded_value = TestStruct0 {p0, p1, p2};
+                                assert_eq!(downloaded_value, value);
+                            } else {
+                                panic!("Wrong result download result: {:?}", result);
+                            }
+                             
+                        }
+
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        }
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        }
+                    }
+                }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::DownloadCompleted(_) => {
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+            
+            gasoline = gasoline - 1;
+        }
+        
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
     }
 }
+
