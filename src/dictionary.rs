@@ -40,7 +40,6 @@ impl CanIndex {
     }
 }
 
-
 impl Into<CanIndex> for CanBaseIndex {
     fn into(self: Self) -> CanIndex {
         CanIndex::new(self.0, 0)

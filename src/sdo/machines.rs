@@ -144,6 +144,14 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
             self.init_upload()
         }
     }
+
+    fn complete_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientOutput::*;
+        use crate::sdo::machines::ClientResult::*;
+        
+        let resp = core::mem::replace(&mut self.write_responder, None);
+        Done(DownloadCompleted(resp))
+    }
 }
 
 /// Finite State Machine implementation
@@ -158,9 +166,11 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
         use crate::sdo::ClientRequest::*;
         use crate::sdo::ServerResponse::*;
         use crate::sdo::machines::ClientOutput::*;
-        //use crate::sdo::machines::ClientResult::*;
      
         match (&self.state, response) {
+
+            // ---- Upload Handling ----
+            
             (InitUploading, UploadSingleSegment(res_index, len, data)) => {
                 if res_index != self.current_index {
                     self.state = Idle;
@@ -204,6 +214,17 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                             Output(UploadSegment(new_toggle))
                         }
                     }
+                }
+            }
+
+            // ---- Download Handling ----
+                        
+            (InitSingleDownload(_len), DownloadInitAck(res_index)) => {
+                self.state = Idle;
+                if res_index != self.current_index {
+                    Error(SdoError::CanIndexMismatch(res_index, self.current_index))
+                } else {
+                    self.complete_downloading()
                 }
             }
         }
