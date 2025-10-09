@@ -449,12 +449,57 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 }
             }
                 
-            (ServerState::Idle, ClientRequest::InitSingleSegmentDownload(index, len, data)) => {
+            (Idle, InitSingleSegmentDownload(index, len, data)) => {
                 self.index = index;
                 self.download_data[0..len as usize].copy_from_slice(&data[0..len as usize]);
                 self.download_length = len as usize;
                 let response = DownloadInitAck(index);
                 Output(response)
+            }
+
+            (Idle, InitMultipleDownload(index, length)) => {
+                self.index = index;
+                let length = length as usize;
+                if length > self.download_data.len() {
+                    Error(SdoError::BufferOverflow)
+                } else {
+                    self.download_length = length;
+                    self.download_position = 0;
+                    let toggle = ToggleBit(false);
+                    self.state = DownloadingMultipleSegments(toggle, 0);
+                    let response = DownloadSegmentAck(toggle);
+                    Output(response)
+                }
+            }
+            
+            (DownloadingMultipleSegments(expected_toggle, position), DownloadSegment(toggle, end, len, data)) => {
+
+                if toggle != *expected_toggle {
+                    Error(SdoError::ToggleMismatch)
+                } else {
+                    let data_len = len as usize;
+                    let new_position = position + data_len;
+                    if new_position > self.download_length {
+                        Error(SdoError::BufferOverflow)
+                    } else {
+                        self.download_data[*position..new_position]
+                            .copy_from_slice(&data[0..data_len]);
+                        self.download_position = new_position;
+                        self.state = if end {
+                            ServerState::Idle
+                        } else {
+                            ServerState::DownloadingMultipleSegments(
+                                !*expected_toggle,
+                                new_position,
+                            )
+                        };
+                        
+                        let response = ServerResponse::DownloadSegmentAck(!toggle);
+                        Output(response)
+                    }
+                }
+                
+                
             }
             
             (_, _) => {
