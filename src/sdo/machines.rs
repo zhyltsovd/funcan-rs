@@ -662,4 +662,46 @@ mod tests {
             panic!("SDO exchange is stuck!");
         }
     }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct TestStruct0 {
+        p0: u8,
+        p1: u16,
+        p2: u8,   
+    }
+
+    impl IntoBuf for TestStruct0 {
+        fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize {
+            buf[0] = self.p0;
+            buf[1..3].copy_from_slice(&self.p1.to_le_bytes());
+            buf[3] = self.p2;
+            4
+        }
+    }
+    
+    #[test]
+    fn sdo_download_struct_value() {
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
+        let mut server: ServerMachine<1024> = ServerMachine::default();
+
+        let mut types = Vec::<_, 254>::new();
+        types.push(1).unwrap();
+        types.push(2).unwrap();
+        types.push(1).unwrap();
+
+        let base_index = CanBaseIndex(0x6068);
+        let index = CanIndices {base_index: base_index, can_type: CanType::Struct(types)};
+
+        let value = TestStruct0 {p0: 0x11, p1: 0x55aa, p2: 0x22};
+
+        let fake_responder = ();
+
+        let mut client_out = client.write(index, value, fake_responder);
+
+        let mut gasoline = 10;
+
+        //while gasoline > 0 {
+        //    let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+        //}
+    }
 }
