@@ -11,6 +11,7 @@ pub enum SdoError {
     TransferAborted(AbortCode),
     ToggleMismatch,
     BufferOverflow,
+    Busy,
 }
 
 /// Client states
@@ -319,21 +320,70 @@ pub struct ServerMachine<const N: usize> {
 }
 
 impl<const N: usize> ServerMachine<N> {
-    fn upload_data(self: &mut Self, data: &[u8]) {
+
+
+    fn continue_uploading(self: &mut Self, response_toggle: ToggleBit, position: usize) -> ServerOutput<N> {
+        let remaining = self.upload_length - position;
+        let data_len = remaining.min(7);
+        let end = remaining <= 7;
+        let mut data = [0; 7];
+        data[0..data_len]
+            .copy_from_slice(&self.upload_data[position .. position + data_len]);
+        let response =
+            ServerResponse::UploadMultiples(response_toggle, end, data_len as u8, data);
+        if end {
+            self.state = ServerState::Idle;
+        } else {
+            self.state = ServerState::UploadingMultipleSegments {
+                response_toggle: response_toggle,
+                expected_next_toggle: !response_toggle,
+                position: position,
+            };
+
+        }
+        
+        ServerOutput::Output(response)
+    }
+    
+    
+    fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
+        use crate::sdo::machines::ServerState::*;
+        use crate::sdo::ServerResponse::*;
+        use crate::sdo::machines::ServerOutput::*;
+        //use crate::sdo::ServerResponse::*;
+        //use crate::sdo::machines::ClientOutput::*;
+
+        
         if let ServerState::AwaitingData(b) = self.state {
             let n = data.len();
             self.upload_length = n;
             self.upload_data[0..n].copy_from_slice(data);
 
             if b {
-                self.state = ServerState::UploadingSingleSegment;
+                self.state = Idle;
+
+                let mut data = [0; 4];
+                data[0..self.upload_length]
+                    .copy_from_slice(&self.upload_data[0..self.upload_length]);
+                let response =
+                    UploadSingleSegment(self.index, self.upload_length as u8, data);
+                Output(response)
+                
             } else {
-                self.state = ServerState::UploadingMultipleSegments {
-                    response_toggle: ToggleBit(false),
+
+                let response_toggle = ToggleBit(false);
+                /*
+                self.state = UploadingMultipleSegments {
+                    response_toggle: response_toggle,
                     expected_next_toggle: ToggleBit(true),
                     position: 0,
                 };
+                */
+                self.continue_uploading(response_toggle, 0)
             }
+        } else {
+            
+            Error(SdoError::Busy)
         }
     }
 }
@@ -348,9 +398,9 @@ pub enum ServerResult<const N: usize> {
 /// All observations of server machine
 pub enum ServerOutput<const N: usize> {
     Output(ServerResponse),
-    AwaitingData(CanIndex),
+    Data(CanIndex),
     Done(ServerResult<N>),
-    Error(Error),
+    Error(SdoError),
     Ready,
 }
 
@@ -375,6 +425,33 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
     }
 
     fn transit(self: &mut Self, request: ClientRequest) -> ServerOutput<N> {
-        todo!()
+        use crate::sdo::machines::ServerState::*;
+        use crate::sdo::ClientRequest::*;
+        use crate::sdo::machines::ServerOutput::*;
+        //use crate::sdo::ServerResponse::*;
+        //use crate::sdo::machines::ClientOutput::*;
+
+        match (&self.state, request) {
+            (Idle, InitUpload(index)) => {
+                self.index = index;
+                let b = self.upload_length <= 4;
+                self.state = AwaitingData(b);
+                Data(self.index)
+            }
+
+
+            (UploadingMultipleSegments { response_toggle, position, ..}, ClientRequest::UploadSegment(toggle)) => {
+                if toggle != *response_toggle {
+                    Error(SdoError::ToggleMismatch)
+                } else {
+                    let new_position = position + 7;
+                    self.continue_uploading(!toggle, new_position)
+                }
+            }
+                
+            (_, _) => {
+                todo!()
+            }
+        }
     }
 }
