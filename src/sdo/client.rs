@@ -1,1 +1,143 @@
+use core::marker::PhantomData;
 
+use crate::dictionary::*;
+use crate::interfaces::*;
+use crate::machine::*;
+use crate::raw::*;
+use crate::sdo::machines::*;
+use crate::sdo::*;
+
+pub struct SdoClient<const N: usize, R, W, D> {
+    pub node: u8,
+    pub sdo: ClientMachine<N, R, W>,
+    _phantom: PhantomData<D>,
+}
+
+pub enum SdoConfig<R, W, D: Dictionary> {
+    Read(D::Index, R),
+    Write(D::Index, D::Object, W),
+}
+
+
+/*
+impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
+where
+    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
+    R: Responder<<D as Dictionary>::Object>,
+    W: Responder<()>,
+{
+    pub fn new(node: u8) -> Self {
+        let sdo = ClientMachine::default();
+        SdoClient {
+            node,
+            sdo,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn config(self: &mut Self, config: SdoConfig<R, W, D>) -> SdoConfigResult {
+        match config {
+            SdoConfig::Read(ix, r) => {
+                if let Some(st) = self.sdo.observe() {
+                    if st.is_ready() {
+                        self.sdo.read(ix.into(), r);
+                        SdoConfigResult::Ok
+                    } else {
+                        SdoConfigResult::Busy
+                    }
+                } else {
+                    SdoConfigResult::Error
+                }
+            }
+
+            SdoConfig::Write(ix, x, r) => {
+                if let Some(st) = self.sdo.observe() {
+                    if st.is_ready() {
+                        self.sdo.write(ix.into(), x, r);
+                        SdoConfigResult::Ok
+                    } else {
+                        SdoConfigResult::Busy
+                    }
+                } else {
+                    SdoConfigResult::Error
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) {
+        match r {
+            ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
+                if let Ok(index) = <D as Dictionary>::Index::try_from(ix) {
+                    if let Ok(x) = <D as Dictionary>::Object::try_from((index, &data[0..len])) {
+                        if let Some(r) = maybe_r {
+                            let _ = r.respond(x);
+                        }
+                    }
+                }
+            }
+            ClientResult::DownloadCompleted(maybe_r) => {
+                if let Some(r) = maybe_r {
+                    let _ = r.respond(());
+                }
+            }
+            ClientResult::TransferAborted(_) => {}
+        }
+    }
+}
+
+impl<const N: usize, R, W, D> MachineTrans<CanFrame> for SdoClient<N, R, W, D>
+where
+    D: Dictionary,
+    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
+    D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
+    R: Responder<<D as Dictionary>::Object>,
+    W: Responder<()>,
+{
+    type Observation = Option<CanFrame>;
+
+    fn initial(self: &mut Self) {
+        self.sdo.initial();
+    }
+
+    fn transit(self: &mut Self, frame: CanFrame) {
+        if let Ok(response) = ServerResponse::try_from(frame.can_data) {
+            self.sdo.transit(response);
+        }
+    }
+
+    fn observe(self: &mut Self) -> Self::Observation {
+        let r = self.sdo.observe()?;
+
+        match r {
+            ClientOutput::Output(out) => {
+                let data_out: [u8; 8] = out.into();
+                let fun_code = CobId::SdoRequest(self.node);
+                let frame_out = CanFrame {
+                    can_cobid: fun_code.into(),
+                    can_len: 8,
+                    can_data: data_out,
+                };
+
+                Some(frame_out)
+            }
+
+            ClientOutput::Done(res) => {
+                self.handle_sdo_result(res);
+                None
+            }
+
+            ClientOutput::Error(err) => {
+                None // handle error
+            }
+
+            ClientOutput::Ready => {
+                None // should not happen
+            }
+        }
+    }
+}
+
+*/

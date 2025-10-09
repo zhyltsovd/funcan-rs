@@ -40,6 +40,7 @@ pub struct ClientMachine<const N: usize, RR, RW> {
 }
 
 /// Possible final result that machine produces
+#[derive(Debug)]
 pub enum ClientResult<const N: usize, RR, RW> {
     UploadCompleted(CanBaseIndex, [u8; N], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
@@ -47,6 +48,7 @@ pub enum ClientResult<const N: usize, RR, RW> {
 }
         
 /// All possible observations of client machine
+#[derive(Debug)]
 pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),
     Done(ClientResult<N, RR, RW>),
@@ -385,6 +387,7 @@ pub enum ServerResult<const N: usize> {
 }
 
 /// All observations of server machine
+#[derive(Debug)]
 pub enum ServerOutput<const N: usize> {
     Output(ServerResponse),
     FinalOutput(ServerResponse, ServerResult<N>),
@@ -599,6 +602,136 @@ mod tests {
     }
 
     #[test]
+    fn sdo_upload_struct_value() {
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
+        let mut server: ServerMachine<1024> = ServerMachine::default();
+
+        let mut types = Vec::<_, 254>::new();
+        types.push(1).unwrap();
+        types.push(2).unwrap();
+        types.push(1).unwrap();
+
+        let base_index = CanBaseIndex(0x6068);
+        let index = CanIndices {base_index: base_index, can_type: CanType::Struct(types)};
+
+        let value = TestStruct0 {p0: 0x11, p1: 0x55aa, p2: 0x22};
+
+        let fake_responder = ();
+
+        let mut client_out = client.read(index, fake_responder);
+
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
+            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            match out {
+                ClientOutput::Output(req) => {
+                    let server_out = server.transit(req);
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client_out = client.transit(resp.clone());
+                            //println!("{:?}", client_out);
+                        }
+                        ServerOutput::Data(sindex) => {
+                            if sindex.base == base_index.0 {
+                                let r =
+                                    match sindex.sub {
+                                        0 => {
+                                            server.upload_data(&[value.p0])
+                                        }
+                                        
+                                        1 => {
+                                            server.upload_data(&value.p1.to_le_bytes())
+                                        }
+                                        
+                                        2 => {
+                                            server.upload_data(&[value.p2])
+                                        }
+                                        
+                                        n => {
+                                            panic!("Unknown sub: {}", n);
+                                        }
+                                    };
+
+                                match r {
+                                    ServerOutput::FinalOutput(resp, result) => {
+                                        client_out = client.transit(resp);
+                                        if let ServerResult::UploadCompleted = result {
+                                            continue;
+                                        } else {
+                                            panic!("Wrong final upload result: {:?}", result);
+                                        }
+                                    }
+
+                                    ServerOutput::Output(resp) => {
+                                        client_out = client.transit(resp);
+                                    }
+
+                                    out => {
+                                        panic!("Wrong output while uploading: {:?}", out);
+                                    }
+
+                                }
+                            } else {
+                                panic!("CanIndex mismatch");
+                            }
+                        }
+
+                        ServerOutput::FinalOutput(resp, result) => {
+                            client_out = client.transit(resp.clone());
+                            if let ServerResult::UploadCompleted = result {
+                                continue;
+                            } else {
+                                panic!("Wrong final upload result: {:?}", result);
+                            }
+                            
+                        }
+
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        }
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        }
+                    }
+                }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::UploadCompleted(i, data, n, _) => {
+                        assert_eq!(n, 4);
+                        
+                        let p0 = data[0];
+                        let p1 = u16::from_le_bytes([data[1], data[2]]);
+                        let p2 = data[3]; 
+                        let uploaded_value = TestStruct0 {p0, p1, p2};
+
+                        assert_eq!(uploaded_value, value);
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+
+            gasoline = gasoline - 1;
+        }
+
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }
+
+    #[test]
     fn sdo_download_u32_value() {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server: ServerMachine<1024> = ServerMachine::default();
@@ -739,7 +872,7 @@ mod tests {
                                 
                                 let p0 = data[0];
                                 let p1 = u16::from_le_bytes([data[1], data[2]]);
-                                let p2 = data[3];
+                                let p2 = data[3]; 
                                 let downloaded_value = TestStruct0 {p0, p1, p2};
                                 assert_eq!(downloaded_value, value);
                             } else {
