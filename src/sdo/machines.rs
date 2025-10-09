@@ -534,8 +534,13 @@ mod tests {
                         ServerOutput::Data(sindex) => {
                             if sindex.base == base_index.0 {
                                 let data: [u8; 4] = value.to_le_bytes();
-                                if let ServerOutput::Output(resp) = server.upload_data(&data) {
+                                if let ServerOutput::FinalOutput(resp, result) = server.upload_data(&data) {
                                     client_out = client.transit(resp);
+                                    if let ServerResult::UploadCompleted = result {
+                                        continue;
+                                    } else {
+                                        panic!("Wrong final upload result: {:?}", result);
+                                    }       
                                 } else {
                                     panic!("Server state mismatch");
                                 }
