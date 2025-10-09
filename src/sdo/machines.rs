@@ -585,38 +585,40 @@ mod tests {
         }
     }
 
-    /*
     #[test]
     fn sdo_download_u32_value() {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
-        let mut server = ServerMachine::default();
-        let index = CanIndices {base_index: 0x6068, can_type: CanType::Base};
-        let value: u32 = 5000;
+        let mut server: ServerMachine<1024> = ServerMachine::default();
+
+        let base_index = CanBaseIndex(0x6068);
+        let index = CanIndices {base_index: base_index, can_type: CanType::Base};
+        let value: u32 = 0x55aa;
 
         let fake_responder = ();
 
-        client.write(index, value, fake_responder);
+        let mut client_out = client.write(index, value, fake_responder);
 
         let mut gasoline = 10;
 
         while gasoline > 0 {
-            let client_out = client.observe().unwrap();
-            match client_out {
+            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+
+            match out {
                 ClientOutput::Output(req) => {
-                    server.transit(req);
-                    let server_out = server.observe().unwrap();
+                    
+                    let server_out = server.transit(req); 
 
                     match server_out {
                         ServerOutput::Output(resp) => {
-                            client.transit(resp);
+                            client_out = client.transit(resp);
                         }
-                        ServerOutput::AwaitingData(_) => {
+                        ServerOutput::Data(_) => {
                             panic!("State mismatch");
                         }
 
                         ServerOutput::Done(res) => {
                             if let ServerResult::DownloadCompleted(dindex, data, n) = res {
-                                assert_eq!(index.base_index, dindex.index);
+                                assert_eq!(base_index.0, dindex.base);
                                 assert_eq!(n, 4);
                                 let downloaded_value =
                                     u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
@@ -659,5 +661,5 @@ mod tests {
         if gasoline == 0 {
             panic!("SDO exchange is stuck!");
         }
-    }*/
+    }
 }
