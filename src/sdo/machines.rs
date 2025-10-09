@@ -297,15 +297,13 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 enum ServerState {
     Idle,
     AwaitingData(bool),
-    UploadingSingleSegment,
+//    UploadingSingleSegment,
     UploadingMultipleSegments {
         response_toggle: ToggleBit,
-        expected_next_toggle: ToggleBit,
         position: usize,
     },
-    DownloadingSingleSegment,
+//    DownloadingSingleSegment,
     DownloadingMultipleSegments(ToggleBit, usize),
-    ErrorState(Error),
 }
 
 /// Server context
@@ -336,7 +334,6 @@ impl<const N: usize> ServerMachine<N> {
         } else {
             self.state = ServerState::UploadingMultipleSegments {
                 response_toggle: response_toggle,
-                expected_next_toggle: !response_toggle,
                 position: position,
             };
 
@@ -346,7 +343,7 @@ impl<const N: usize> ServerMachine<N> {
     }
     
     
-    fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
+    pub fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ServerResponse::*;
         use crate::sdo::machines::ServerOutput::*;
@@ -370,15 +367,7 @@ impl<const N: usize> ServerMachine<N> {
                 Output(response)
                 
             } else {
-
                 let response_toggle = ToggleBit(false);
-                /*
-                self.state = UploadingMultipleSegments {
-                    response_toggle: response_toggle,
-                    expected_next_toggle: ToggleBit(true),
-                    position: 0,
-                };
-                */
                 self.continue_uploading(response_toggle, 0)
             }
         } else {
@@ -507,4 +496,168 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
             }
         }
     }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sdo_upload_u32_value() {
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
+        let mut server: ServerMachine<1024> = ServerMachine::default();
+
+        let base_index = CanBaseIndex(0x6068);
+        let index = CanIndices {base_index: base_index, can_type: CanType::Base};
+        
+        let value: u32 = 5077;
+
+        let fake_responder = ();
+
+        let mut client_out = client.read(index, fake_responder);
+
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
+            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            match out {
+                ClientOutput::Output(req) => {
+                    let server_out = server.transit(req);
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client_out = client.transit(resp.clone());
+                        }
+                        ServerOutput::Data(sindex) => {
+                            if sindex.base == base_index.0 {
+                                let data: [u8; 4] = value.to_le_bytes();
+                                if let ServerOutput::Output(resp) = server.upload_data(&data) {
+                                    client_out = client.transit(resp);
+                                } else {
+                                    panic!("Server state mismatch");
+                                }
+                            } else {
+                                panic!("CanIndex mismatch");
+                            }
+                        }
+
+                        ServerOutput::Done(_res) => {
+                            
+                        }
+
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        }
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        }
+                    }
+                }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::UploadCompleted(i, data, n, _) => {
+                        assert_eq!(n, 4);
+                        let uploaded_value =
+                            u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                        assert_eq!(uploaded_value, value);
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+
+            gasoline = gasoline - 1;
+        }
+
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }
+
+    /*
+    #[test]
+    fn sdo_download_u32_value() {
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
+        let mut server = ServerMachine::default();
+        let index = CanIndices {base_index: 0x6068, can_type: CanType::Base};
+        let value: u32 = 5000;
+
+        let fake_responder = ();
+
+        client.write(index, value, fake_responder);
+
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
+            let client_out = client.observe().unwrap();
+            match client_out {
+                ClientOutput::Output(req) => {
+                    server.transit(req);
+                    let server_out = server.observe().unwrap();
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client.transit(resp);
+                        }
+                        ServerOutput::AwaitingData(_) => {
+                            panic!("State mismatch");
+                        }
+
+                        ServerOutput::Done(res) => {
+                            if let ServerResult::DownloadCompleted(dindex, data, n) = res {
+                                assert_eq!(index.base_index, dindex.index);
+                                assert_eq!(n, 4);
+                                let downloaded_value =
+                                    u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                                assert_eq!(downloaded_value, value);
+                            } else {
+                                panic!("Wrong result");
+                            }
+                        }
+
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        }
+
+                        ServerOutput::Ready => {
+                            panic!("Server failed to start working");
+                        }
+                    }
+                }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::DownloadCompleted(_) => {
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+
+                ClientOutput::Ready => {
+                    panic!("Client failed to start working");
+                }
+            }
+
+            gasoline = gasoline - 1;
+        }
+
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }*/
 }
