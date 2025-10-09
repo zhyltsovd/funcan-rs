@@ -428,7 +428,7 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ClientRequest::*;
         use crate::sdo::machines::ServerOutput::*;
-        //use crate::sdo::ServerResponse::*;
+        use crate::sdo::ServerResponse::*;
         //use crate::sdo::machines::ClientOutput::*;
 
         match (&self.state, request) {
@@ -449,6 +449,14 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 }
             }
                 
+            (ServerState::Idle, ClientRequest::InitSingleSegmentDownload(index, len, data)) => {
+                self.index = index;
+                self.download_data[0..len as usize].copy_from_slice(&data[0..len as usize]);
+                self.download_length = len as usize;
+                let response = DownloadInitAck(index);
+                Output(response)
+            }
+            
             (_, _) => {
                 todo!()
             }
