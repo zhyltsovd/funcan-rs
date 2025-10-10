@@ -5,7 +5,7 @@ pub struct CanBaseIndex(pub u16);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanType {
-    Base,
+    Base(usize),
     Array(Vec<u8, 254>),
     Struct(Vec<u8, 254>),
 }
@@ -13,11 +13,20 @@ pub enum CanType {
 impl CanType {
     pub fn is_compound(self: &Self) -> Vec<u8, 254> {
         match self {
-            CanType::Base => Vec::new(),
-            CanType::Array(n) => n.clone(),
-            CanType::Struct(n) => n.clone(),
+            CanType::Base(_) => Vec::new(),
+            CanType::Array(ns) => ns.clone(),
+            CanType::Struct(ns) => ns.clone(),
         }
     }
+
+    pub fn size(self: &Self) -> usize {
+        match self {
+            CanType::Base(s) => *s,
+            CanType::Array(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
+            CanType::Struct(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
+        }
+    }
+    
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -521,7 +521,7 @@ mod tests {
         let base_index = CanBaseIndex(0x6068);
         let index = CanIndices {
             base_index: base_index,
-            can_type: CanType::Base,
+            can_type: CanType::Base(4),
         };
 
         let value: u32 = 5077;
@@ -739,7 +739,7 @@ mod tests {
         let base_index = CanBaseIndex(0x6068);
         let index = CanIndices {
             base_index: base_index,
-            can_type: CanType::Base,
+            can_type: CanType::Base(4),
         };
         let value: u32 = 0x55aa;
 
