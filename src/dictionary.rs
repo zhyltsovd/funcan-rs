@@ -2,7 +2,7 @@ use heapless::vec::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CanBaseIndex(pub u16);
-    
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanType {
     Base,
@@ -20,7 +20,6 @@ impl CanType {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CanIndices {
     pub base_index: CanBaseIndex,
@@ -35,7 +34,7 @@ pub struct CanIndex {
 
 impl CanIndex {
     pub fn inc_sub(self: &mut Self) {
-        self.sub = self.sub + 1; 
+        self.sub = self.sub + 1;
     }
 }
 

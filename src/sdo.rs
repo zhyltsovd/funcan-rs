@@ -151,7 +151,7 @@ pub enum ClientRequest {
     UploadSegment(ToggleBit),
     InitSingleSegmentDownload(CanIndex, u8, [u8; 4]), // index, length, data
     InitMultipleDownload(CanIndex, u32),              // index and length,
-    DownloadSegment(ToggleBit, bool, u8, [u8; 7]), // toogle bit, end bit, length, data
+    DownloadSegment(ToggleBit, bool, u8, [u8; 7]),    // toogle bit, end bit, length, data
     AbortTransfer(CanIndex, AbortCode),
 }
 

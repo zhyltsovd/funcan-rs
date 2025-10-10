@@ -1,7 +1,7 @@
-use heapless::vec::*;
 use crate::interfaces::*;
 use crate::machine::*;
 use crate::sdo::*;
+use heapless::vec::*;
 
 /// Possible errors during SDO communications
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,14 +18,13 @@ pub enum SdoError {
 enum ClientState {
     Idle,
     InitUploading,
-//    SingleSegmentUploaded,
+    //    SingleSegmentUploaded,
     UploadingMultiples(ToggleBit),
-//    MultiplesUploaded,
-
+    //    MultiplesUploaded,
     InitiateSingleDownload(usize),
     InitiateMultipleDownload(usize),
     DownloadingSegments(ToggleBit, usize),
-//    DownloadCompleted,
+    //    DownloadCompleted,
 }
 
 /// Client context
@@ -46,14 +45,13 @@ pub enum ClientResult<const N: usize, RR, RW> {
     DownloadCompleted(Option<RW>),
     TransferAborted(AbortCode),
 }
-        
+
 /// All possible observations of client machine
 #[derive(Debug)]
 pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),
     Done(ClientResult<N, RR, RW>),
     Error(SdoError),
-    Ready,
 }
 
 impl<const N: usize, RR, RW> ClientOutput<N, RR, RW> {
@@ -81,6 +79,12 @@ impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
 
 impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     
+    pub fn is_ready(self: &Self) -> bool {
+        match self.state {
+            ClientState::Idle => true,
+            _ => false,
+        }
+    }
     /// Initiates SDO read
     pub fn read(self: &mut Self, indices: CanIndices, r: RR) -> ClientOutput<N, RR, RW> {
         self.data_index = 0;
@@ -100,7 +104,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         self.current_mode = indices.can_type.is_compound();
         let n = t.into_buf(&mut self.data);
         self.write_responder = Some(r);
-        
+
         self.init_download(n)
     }
 
@@ -108,40 +112,41 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         self.state = ClientState::InitUploading;
         ClientOutput::Output(ClientRequest::InitUpload(self.current_index))
     }
- 
+
     fn init_download(self: &mut Self, n: usize) -> ClientOutput<N, RR, RW> {
         let req = if n <= 4 {
             self.state = ClientState::InitiateSingleDownload(n);
             let mut data = [0; 4];
             data.copy_from_slice(&self.data[0..n]);
-            
+
             ClientRequest::InitSingleSegmentDownload(self.current_index, n as u8, data)
         } else {
             self.state = ClientState::InitiateMultipleDownload(n);
-            ClientRequest::InitMultipleDownload(self.current_index, n as u32)        
+            ClientRequest::InitMultipleDownload(self.current_index, n as u32)
         };
 
         ClientOutput::Output(req)
     }
-        
+
     fn output_data(self: &mut Self) -> ClientOutput<N, RR, RW> {
-        use crate::sdo::machines::ClientResult::*;
         use crate::sdo::machines::ClientOutput::*;
-            
+        use crate::sdo::machines::ClientResult::*;
+
         let resp = core::mem::replace(&mut self.read_responder, None);
-        let res =
-            UploadCompleted(self.current_index.into(),
-                            self.data.clone(), 
-                            self.data_index,
-                            resp);
+        let res = UploadCompleted(
+            self.current_index.into(),
+            self.data.clone(),
+            self.data_index,
+            resp,
+        );
         Done(res)
     }
 
     fn continue_uploading(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientState::*;
-        
+
         let _ = self.current_mode.pop();
-        if self.current_mode.len() == 0 {   
+        if self.current_mode.len() == 0 {
             self.state = Idle;
             self.output_data()
         } else {
@@ -152,9 +157,9 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
 
     fn continue_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientState::*;
-        
+
         let _ = self.current_mode.pop();
-        if self.current_mode.len() == 0 {   
+        if self.current_mode.len() == 0 {
             self.state = Idle;
             self.complete_downloading()
         } else {
@@ -166,7 +171,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     fn complete_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientResult::*;
-        
+
         let resp = core::mem::replace(&mut self.write_responder, None);
         Done(DownloadCompleted(resp))
     }
@@ -176,46 +181,46 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         use crate::sdo::ClientRequest::*;
 
         self.state = ClientState::DownloadingSegments(t, len);
-        
+
         // Prepare data segment to download
         let mut data = [0u8; 7];
         let ix0 = self.data_index;
         let ix1 = (ix0 + 7).min(len);
         let end = self.data_index + 7 >= len;
-        
+
         data.copy_from_slice(&self.data[ix0..ix1]);
         Output(DownloadSegment(t, end, 7, data))
     }
 }
 
 /// Finite State Machine implementation
-impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW>> for ClientMachine<N, RR, RW> {
+impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW>>
+    for ClientMachine<N, RR, RW>
+{
     fn initiate(self: &mut Self) {
         self.state = ClientState::Idle;
         self.data_index = 0;
     }
 
     fn transit(self: &mut Self, response: ServerResponse) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientState::*;
         use crate::sdo::ClientRequest::*;
         use crate::sdo::ServerResponse::*;
-        use crate::sdo::machines::ClientOutput::*;
-     
-        match (&self.state, response) {
 
+        match (&self.state, response) {
             // ---- Upload Handling ----
-            
             (InitUploading, UploadSingleSegment(res_index, len, data)) => {
                 if res_index != self.current_index {
                     self.state = Idle;
                     Error(SdoError::CanIndexMismatch(res_index, self.current_index))
                 } else {
-                    self.data[self.data_index .. self.data_index + 4].copy_from_slice(&data);
+                    self.data[self.data_index..self.data_index + 4].copy_from_slice(&data);
                     self.data_index += len as usize;
 
                     self.continue_uploading()
                 }
-            },
+            }
 
             (InitUploading, ServerResponse::UploadInitMultiples(res_index, _size)) => {
                 if res_index != self.current_index {
@@ -225,7 +230,7 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                     //self.data_index = 0;
                     let t = ToggleBit(false);
                     self.state = UploadingMultiples(t);
-                    Output(UploadSegment(t))                                   
+                    Output(UploadSegment(t))
                 }
             }
 
@@ -252,7 +257,6 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
             }
 
             // ---- Download Handling ----
-                        
             (InitiateSingleDownload(_len), DownloadInitAck(res_index)) => {
                 self.state = Idle;
                 if res_index != self.current_index {
@@ -288,25 +292,21 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
             }
 
             // Default: Unexpected response
-            (_state, _response) => {
-                Error(SdoError::StateResponseMismatch)
-            }
-
+            (_state, _response) => Error(SdoError::StateResponseMismatch),
         }
-        
     }
-} 
-  
+}
+
 /// Server states
 enum ServerState {
     Idle,
     AwaitingData(bool),
-//    UploadingSingleSegment,
+    //    UploadingSingleSegment,
     UploadingMultipleSegments {
         response_toggle: ToggleBit,
         position: usize,
     },
-//    DownloadingSingleSegment,
+    //    DownloadingSingleSegment,
     DownloadingMultipleSegments(ToggleBit, usize),
 }
 
@@ -322,17 +322,17 @@ pub struct ServerMachine<const N: usize> {
 }
 
 impl<const N: usize> ServerMachine<N> {
-
-
-    fn continue_uploading(self: &mut Self, response_toggle: ToggleBit, position: usize) -> ServerOutput<N> {
+    fn continue_uploading(
+        self: &mut Self,
+        response_toggle: ToggleBit,
+        position: usize,
+    ) -> ServerOutput<N> {
         let remaining = self.upload_length - position;
         let data_len = remaining.min(7);
         let end = remaining <= 7;
         let mut data = [0; 7];
-        data[0..data_len]
-            .copy_from_slice(&self.upload_data[position .. position + data_len]);
-        let response =
-            ServerResponse::UploadMultiples(response_toggle, end, data_len as u8, data);
+        data[0..data_len].copy_from_slice(&self.upload_data[position..position + data_len]);
+        let response = ServerResponse::UploadMultiples(response_toggle, end, data_len as u8, data);
         if end {
             self.state = ServerState::Idle;
             ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
@@ -343,17 +343,15 @@ impl<const N: usize> ServerMachine<N> {
             };
             ServerOutput::Output(response)
         }
-        
     }
-        
+
     pub fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
+        use crate::sdo::machines::ServerOutput::*;
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ServerResponse::*;
-        use crate::sdo::machines::ServerOutput::*;
         //use crate::sdo::ServerResponse::*;
         //use crate::sdo::machines::ClientOutput::*;
 
-        
         if let ServerState::AwaitingData(b) = self.state {
             let n = data.len();
             self.upload_length = n;
@@ -365,8 +363,7 @@ impl<const N: usize> ServerMachine<N> {
                 let mut data = [0; 4];
                 data[0..self.upload_length]
                     .copy_from_slice(&self.upload_data[0..self.upload_length]);
-                let response =
-                    UploadSingleSegment(self.index, self.upload_length as u8, data);
+                let response = UploadSingleSegment(self.index, self.upload_length as u8, data);
                 //Output(response)
                 ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
             } else {
@@ -374,7 +371,6 @@ impl<const N: usize> ServerMachine<N> {
                 self.continue_uploading(response_toggle, 0)
             }
         } else {
-            
             Error(SdoError::Busy)
         }
     }
@@ -395,7 +391,6 @@ pub enum ServerOutput<const N: usize> {
     FinalOutput(ServerResponse, ServerResult<N>),
     Data(CanIndex),
     Error(SdoError),
-    Ready,
 }
 
 impl<const N: usize> Default for ServerMachine<N> {
@@ -419,11 +414,11 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
     }
 
     fn transit(self: &mut Self, request: ClientRequest) -> ServerOutput<N> {
+        use crate::sdo::machines::ServerOutput::*;
+        use crate::sdo::machines::ServerResult::*;
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ClientRequest::*;
-        use crate::sdo::machines::ServerOutput::*;
         use crate::sdo::ServerResponse::*;
-        use crate::sdo::machines::ServerResult::*;
 
         match (&self.state, request) {
             (Idle, InitUpload(index)) => {
@@ -433,8 +428,14 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 Data(self.index)
             }
 
-
-            (UploadingMultipleSegments { response_toggle, position, ..}, ClientRequest::UploadSegment(toggle)) => {
+            (
+                UploadingMultipleSegments {
+                    response_toggle,
+                    position,
+                    ..
+                },
+                ClientRequest::UploadSegment(toggle),
+            ) => {
                 if toggle != *response_toggle {
                     Error(SdoError::ToggleMismatch)
                 } else {
@@ -442,14 +443,15 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                     self.continue_uploading(!toggle, new_position)
                 }
             }
-                
+
             (Idle, InitSingleSegmentDownload(index, len, data)) => {
                 self.index = index;
                 self.download_data[0..len as usize].copy_from_slice(&data[0..len as usize]);
                 self.download_length = len as usize;
                 let response = DownloadInitAck(index);
-                let result = DownloadCompleted(self.index, self.download_data.clone(), self.download_length);
-                    
+                let result =
+                    DownloadCompleted(self.index, self.download_data.clone(), self.download_length);
+
                 FinalOutput(response, result)
             }
 
@@ -467,9 +469,11 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                     Output(response)
                 }
             }
-            
-            (DownloadingMultipleSegments(expected_toggle, position), DownloadSegment(toggle, end, len, data)) => {
 
+            (
+                DownloadingMultipleSegments(expected_toggle, position),
+                DownloadSegment(toggle, end, len, data),
+            ) => {
                 if toggle != *expected_toggle {
                     Error(SdoError::ToggleMismatch)
                 } else {
@@ -489,23 +493,19 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                                 new_position,
                             )
                         };
-                        
+
                         let response = ServerResponse::DownloadSegmentAck(!toggle);
                         Output(response)
                     }
                 }
-                
-                
             }
-            
+
             (_, _) => {
                 todo!()
             }
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -517,8 +517,11 @@ mod tests {
         let mut server: ServerMachine<1024> = ServerMachine::default();
 
         let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {base_index: base_index, can_type: CanType::Base};
-        
+        let index = CanIndices {
+            base_index: base_index,
+            can_type: CanType::Base,
+        };
+
         let value: u32 = 5077;
 
         let fake_responder = ();
@@ -528,7 +531,7 @@ mod tests {
         let mut gasoline = 10;
 
         while gasoline > 0 {
-            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            let out = core::mem::replace(&mut client_out, ClientOutput::Error(SdoError::Busy));
             match out {
                 ClientOutput::Output(req) => {
                     let server_out = server.transit(req);
@@ -539,13 +542,15 @@ mod tests {
                         ServerOutput::Data(sindex) => {
                             if sindex.base == base_index.0 {
                                 let data: [u8; 4] = value.to_le_bytes();
-                                if let ServerOutput::FinalOutput(resp, result) = server.upload_data(&data) {
+                                if let ServerOutput::FinalOutput(resp, result) =
+                                    server.upload_data(&data)
+                                {
                                     client_out = client.transit(resp);
                                     if let ServerResult::UploadCompleted = result {
                                         continue;
                                     } else {
                                         panic!("Wrong final upload result: {:?}", result);
-                                    }       
+                                    }
                                 } else {
                                     panic!("Server state mismatch");
                                 }
@@ -561,21 +566,16 @@ mod tests {
                             } else {
                                 panic!("Wrong final upload result: {:?}", result);
                             }
-                            
                         }
 
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
                         }
-
-                        ServerOutput::Ready => {
-                            panic!("Server failed to start working");
-                        }
                     }
                 }
 
                 ClientOutput::Done(res) => match res {
-                    ClientResult::UploadCompleted(i, data, n, _) => {
+                    ClientResult::UploadCompleted(_i, data, n, _) => {
                         assert_eq!(n, 4);
                         let uploaded_value =
                             u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
@@ -588,10 +588,6 @@ mod tests {
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
-                }
-
-                ClientOutput::Ready => {
-                    panic!("Client failed to start working");
                 }
             }
 
@@ -614,9 +610,16 @@ mod tests {
         types.push(1).unwrap();
 
         let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {base_index: base_index, can_type: CanType::Struct(types)};
+        let index = CanIndices {
+            base_index: base_index,
+            can_type: CanType::Struct(types),
+        };
 
-        let value = TestStruct0 {p0: 0x11, p1: 0x55aa, p2: 0x22};
+        let value = TestStruct0 {
+            p0: 0x11,
+            p1: 0x55aa,
+            p2: 0x22,
+        };
 
         let fake_responder = ();
 
@@ -625,7 +628,7 @@ mod tests {
         let mut gasoline = 10;
 
         while gasoline > 0 {
-            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            let out = core::mem::replace(&mut client_out, ClientOutput::Error(SdoError::Busy));
             match out {
                 ClientOutput::Output(req) => {
                     let server_out = server.transit(req);
@@ -637,24 +640,17 @@ mod tests {
                         }
                         ServerOutput::Data(sindex) => {
                             if sindex.base == base_index.0 {
-                                let r =
-                                    match sindex.sub {
-                                        0 => {
-                                            server.upload_data(&[value.p0])
-                                        }
-                                        
-                                        1 => {
-                                            server.upload_data(&value.p1.to_le_bytes())
-                                        }
-                                        
-                                        2 => {
-                                            server.upload_data(&[value.p2])
-                                        }
-                                        
-                                        n => {
-                                            panic!("Unknown sub: {}", n);
-                                        }
-                                    };
+                                let r = match sindex.sub {
+                                    0 => server.upload_data(&[value.p0]),
+
+                                    1 => server.upload_data(&value.p1.to_le_bytes()),
+
+                                    2 => server.upload_data(&[value.p2]),
+
+                                    n => {
+                                        panic!("Unknown sub: {}", n);
+                                    }
+                                };
 
                                 match r {
                                     ServerOutput::FinalOutput(resp, result) => {
@@ -673,7 +669,6 @@ mod tests {
                                     out => {
                                         panic!("Wrong output while uploading: {:?}", out);
                                     }
-
                                 }
                             } else {
                                 panic!("CanIndex mismatch");
@@ -687,27 +682,22 @@ mod tests {
                             } else {
                                 panic!("Wrong final upload result: {:?}", result);
                             }
-                            
                         }
 
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
                         }
-
-                        ServerOutput::Ready => {
-                            panic!("Server failed to start working");
-                        }
                     }
                 }
 
                 ClientOutput::Done(res) => match res {
-                    ClientResult::UploadCompleted(i, data, n, _) => {
+                    ClientResult::UploadCompleted(_i, data, n, _) => {
                         assert_eq!(n, 4);
-                        
+
                         let p0 = data[0];
                         let p1 = u16::from_le_bytes([data[1], data[2]]);
-                        let p2 = data[3]; 
-                        let uploaded_value = TestStruct0 {p0, p1, p2};
+                        let p2 = data[3];
+                        let uploaded_value = TestStruct0 { p0, p1, p2 };
 
                         assert_eq!(uploaded_value, value);
                         break;
@@ -718,10 +708,6 @@ mod tests {
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
-                }
-
-                ClientOutput::Ready => {
-                    panic!("Client failed to start working");
                 }
             }
 
@@ -739,7 +725,10 @@ mod tests {
         let mut server: ServerMachine<1024> = ServerMachine::default();
 
         let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {base_index: base_index, can_type: CanType::Base};
+        let index = CanIndices {
+            base_index: base_index,
+            can_type: CanType::Base,
+        };
         let value: u32 = 0x55aa;
 
         let fake_responder = ();
@@ -749,12 +738,11 @@ mod tests {
         let mut gasoline = 10;
 
         while gasoline > 0 {
-            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
+            let out = core::mem::replace(&mut client_out, ClientOutput::Error(SdoError::Busy));
 
             match out {
                 ClientOutput::Output(req) => {
-                    
-                    let server_out = server.transit(req); 
+                    let server_out = server.transit(req);
 
                     match server_out {
                         ServerOutput::Output(resp) => {
@@ -766,7 +754,7 @@ mod tests {
 
                         ServerOutput::FinalOutput(resp, result) => {
                             client_out = client.transit(resp.clone());
-                        
+
                             if let ServerResult::DownloadCompleted(dindex, data, n) = result {
                                 assert_eq!(base_index.0, dindex.base);
                                 assert_eq!(n, 4);
@@ -775,15 +763,11 @@ mod tests {
                                 assert_eq!(downloaded_value, value);
                             } else {
                                 panic!("Wrong result download result: {:?}", result);
-                            } 
+                            }
                         }
 
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
-                        }
-
-                        ServerOutput::Ready => {
-                            panic!("Server failed to start working");
                         }
                     }
                 }
@@ -798,10 +782,6 @@ mod tests {
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
-                }
-
-                ClientOutput::Ready => {
-                    panic!("Client failed to start working");
                 }
             }
 
@@ -817,7 +797,7 @@ mod tests {
     struct TestStruct0 {
         p0: u8,
         p1: u16,
-        p2: u8,   
+        p2: u8,
     }
 
     impl IntoBuf for TestStruct0 {
@@ -828,7 +808,7 @@ mod tests {
             4
         }
     }
-    
+
     #[test]
     fn sdo_download_struct_value() {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
@@ -840,9 +820,16 @@ mod tests {
         types.push(1).unwrap();
 
         let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {base_index: base_index, can_type: CanType::Struct(types)};
+        let index = CanIndices {
+            base_index: base_index,
+            can_type: CanType::Struct(types),
+        };
 
-        let value = TestStruct0 {p0: 0x11, p1: 0x55aa, p2: 0x22};
+        let value = TestStruct0 {
+            p0: 0x11,
+            p1: 0x55aa,
+            p2: 0x22,
+        };
 
         let fake_responder = ();
 
@@ -851,12 +838,11 @@ mod tests {
         let mut gasoline = 10;
 
         while gasoline > 0 {
-            let out = core::mem::replace(&mut client_out, ClientOutput::Ready);
-            
+            let out = core::mem::replace(&mut client_out, ClientOutput::Error(SdoError::Busy));
+
             match out {
                 ClientOutput::Output(req) => {
-                    
-                    let server_out = server.transit(req); 
+                    let server_out = server.transit(req);
 
                     match server_out {
                         ServerOutput::Output(resp) => {
@@ -871,24 +857,19 @@ mod tests {
                             if let ServerResult::DownloadCompleted(dindex, data, n) = result {
                                 assert_eq!(base_index.0, dindex.base);
                                 assert_eq!(n, 4);
-                                
+
                                 let p0 = data[0];
                                 let p1 = u16::from_le_bytes([data[1], data[2]]);
-                                let p2 = data[3]; 
-                                let downloaded_value = TestStruct0 {p0, p1, p2};
+                                let p2 = data[3];
+                                let downloaded_value = TestStruct0 { p0, p1, p2 };
                                 assert_eq!(downloaded_value, value);
                             } else {
                                 panic!("Wrong result download result: {:?}", result);
                             }
-                             
                         }
 
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
-                        }
-
-                        ServerOutput::Ready => {
-                            panic!("Server failed to start working");
                         }
                     }
                 }
@@ -904,18 +885,13 @@ mod tests {
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
                 }
-
-                ClientOutput::Ready => {
-                    panic!("Client failed to start working");
-                }
             }
-            
+
             gasoline = gasoline - 1;
         }
-        
+
         if gasoline == 0 {
             panic!("SDO exchange is stuck!");
         }
     }
 }
-

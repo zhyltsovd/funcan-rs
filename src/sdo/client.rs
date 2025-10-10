@@ -13,11 +13,11 @@ pub struct SdoClient<const N: usize, R, W, D> {
     _phantom: PhantomData<D>,
 }
 
-pub enum SdoConfig<R, W, D: Dictionary> {
+pub enum SdoInput<R, W, D: Dictionary> {
     Read(D::Index, R),
     Write(D::Index, D::Object, W),
+    Frame(CanFrame)
 }
-
 
 /*
 impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
@@ -36,7 +36,7 @@ where
         }
     }
 
-    pub fn config(self: &mut Self, config: SdoConfig<R, W, D>) -> SdoConfigResult {
+    pub fn input(self: &mut Self, config: SdoConfig<R, W, D>) -> ClientOutput<N, RR, RW> {
         match config {
             SdoConfig::Read(ix, r) => {
                 if let Some(st) = self.sdo.observe() {
@@ -65,6 +65,13 @@ where
             }
         }
     }
+    
+
+}
+
+*/
+
+/*
 
     #[inline]
     fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) {

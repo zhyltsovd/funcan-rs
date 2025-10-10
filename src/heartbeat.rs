@@ -37,28 +37,24 @@ impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
     where
         R: Responder<ObservableNodeState>,
     {
-        let res =
-            match self.node_states.get(&node_id) {
-                None => {
-                    r.respond(ObservableNodeState::NotFound)
-                }
-                
-                Some(node) => {
-                    let now = I::now();
-                    if now.duration_since(&node.beat) > self.timeout {
-                        r.respond(ObservableNodeState::Lost)
-                    } else {
-                        r.respond(ObservableNodeState::Alive(node.state))
-                    }
-                }
-            };
+        let res = match self.node_states.get(&node_id) {
+            None => r.respond(ObservableNodeState::NotFound),
 
-        res.is_ok()        
+            Some(node) => {
+                let now = I::now();
+                if now.duration_since(&node.beat) > self.timeout {
+                    r.respond(ObservableNodeState::Lost)
+                } else {
+                    r.respond(ObservableNodeState::Alive(node.state))
+                }
+            }
+        };
+
+        res.is_ok()
     }
 }
 
 impl<const N: usize, I: ClockInstant> MealyMachine<(u8, NmtState), ()> for HeartbeatMachine<N, I> {
-    
     fn transit(self: &mut Self, x: (u8, NmtState)) {
         let (node_id, state) = x;
 

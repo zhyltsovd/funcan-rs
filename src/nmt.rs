@@ -1,4 +1,3 @@
-
 use crate::raw::*;
 
 /// Target of a command: a single node or all nodes.
@@ -91,7 +90,7 @@ impl Into<CanFrame> for NmtRequest {
 
         CanFrame {
             cobid: CobId::NmtService, // NMT uses COB‐ID = 0
-            len: 2,       // only 2 bytes valid
+            len: 2,                   // only 2 bytes valid
             data: data,
         }
     }
