@@ -21,7 +21,7 @@ pub enum SdoInput<R, W, D: Dictionary> {
 
 impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
 where
-    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
+    D::Index: TryFrom<CanBaseIndex> + Into<CanIndices>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
@@ -35,7 +35,7 @@ where
         }
     }
 
-    pub fn input(self: &mut Self, input: SdoInput<R, W, D>) -> ClientOutput<N, RR, RW> {
+    pub fn input(self: &mut Self, input: SdoInput<R, W, D>) -> ClientOutput<N, R, W> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::client::SdoInput::*;
         
@@ -44,7 +44,7 @@ where
                 if self.sdo.is_ready() {
                     self.sdo.read(ix.into(), r)
                 } else {
-                    Error(SdoError::Error)
+                    Error(SdoError::Busy)
                 }
             }
 
@@ -53,38 +53,65 @@ where
                     self.sdo.write(ix.into(), x, r)
                 
                 } else {
-                    Error(SdoError::Error)
+                    Error(SdoError::Busy)
+                }
+            }
+
+            Frame(frame) => {
+                match ServerResponse::try_from(frame.data) {
+
+                    Ok(response) => {
+                        let result = self.sdo.transit(response);
+
+                        if let Done(r) = result {
+                            self.handle_sdo_result(r)
+                        } else {
+                            result
+                        }
+                    }
+
+                    Err(err) => Error(SdoError::DecodingFailure(err))
                 }
             }
         }
     }
+
     
-
-}
-
-
-/*
-
     #[inline]
-    fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) {
+    fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) -> ClientOutput<N, R, W> {
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
                 if let Ok(index) = <D as Dictionary>::Index::try_from(ix) {
                     if let Ok(x) = <D as Dictionary>::Object::try_from((index, &data[0..len])) {
                         if let Some(r) = maybe_r {
                             let _ = r.respond(x);
+                            ClientOutput::TransferCompleted
+                        } else {
+                            ClientOutput::Error(SdoError::NoResponder)
                         }
-                    }
+                    } else {
+                        todo!()
+                    }                
+                } else {
+                    todo!()
                 }
             }
             ClientResult::DownloadCompleted(maybe_r) => {
                 if let Some(r) = maybe_r {
                     let _ = r.respond(());
+                    ClientOutput::TransferCompleted
+                } else {
+                    ClientOutput::Error(SdoError::NoResponder)
                 }
             }
-            ClientResult::TransferAborted(_) => {}
         }
     }
+
+}
+
+
+/*
+
 }
 
 impl<const N: usize, R, W, D> MachineTrans<CanFrame> for SdoClient<N, R, W, D>

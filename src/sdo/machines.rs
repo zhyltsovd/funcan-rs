@@ -1,5 +1,6 @@
 use crate::interfaces::*;
 use crate::machine::*;
+use crate::sdo::{Error as SdoDecodingError};
 use crate::sdo::*;
 use heapless::vec::*;
 
@@ -12,6 +13,8 @@ pub enum SdoError {
     ToggleMismatch,
     BufferOverflow,
     Busy,
+    DecodingFailure(SdoDecodingError),
+    NoResponder
 }
 
 /// Client states
@@ -43,7 +46,6 @@ pub struct ClientMachine<const N: usize, RR, RW> {
 pub enum ClientResult<const N: usize, RR, RW> {
     UploadCompleted(CanBaseIndex, [u8; N], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
-    TransferAborted(AbortCode),
 }
 
 /// All possible observations of client machine
@@ -51,6 +53,7 @@ pub enum ClientResult<const N: usize, RR, RW> {
 pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),
     Done(ClientResult<N, RR, RW>),
+    TransferCompleted,
     Error(SdoError),
 }
 
@@ -381,7 +384,6 @@ impl<const N: usize> ServerMachine<N> {
 pub enum ServerResult<const N: usize> {
     UploadCompleted,
     DownloadCompleted(CanIndex, [u8; N], usize),
-    TransferAborted(AbortCode),
 }
 
 /// All observations of server machine
@@ -589,6 +591,12 @@ mod tests {
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
                 }
+
+                
+                ClientOutput::TransferCompleted => {
+                    break;
+                }
+                
             }
 
             gasoline = gasoline - 1;
@@ -709,6 +717,10 @@ mod tests {
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
                 }
+
+                ClientOutput::TransferCompleted => {
+                    break;
+                }
             }
 
             gasoline = gasoline - 1;
@@ -782,6 +794,10 @@ mod tests {
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
+                }
+                
+                ClientOutput::TransferCompleted => {
+                    break;
                 }
             }
 
@@ -884,6 +900,10 @@ mod tests {
 
                 ClientOutput::Error(err) => {
                     panic!("Client error: {:?}", err);
+                }
+
+                ClientOutput::TransferCompleted => {
+                    break;
                 }
             }
 
