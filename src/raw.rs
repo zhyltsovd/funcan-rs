@@ -21,14 +21,14 @@ pub enum CobId {
 
     /// PDO Tx: 1..4
     PdoTx {
-        pdo_number: u8, /*1..4*/
-        node: u8,
+        pdo_id: u8, /*1..4*/
+        node_id: u8,
     },
 
     /// PDO Rx: 1..4
     PdoRx {
-        pdo_number: u8, /*1..4*/
-        node: u8,
+        pdo_id: u8, /*1..4*/
+        node_id: u8,
     },
 
     /// SDO Response  (COB-ID = 0x580 + node)
@@ -54,13 +54,13 @@ impl From<CobId> for u32 {
             CobId::Sync => 0x080,
             CobId::TimeStamp => 0x100,
             CobId::Emergency(n) => 0x080 | (n as u32),
-            CobId::PdoTx { pdo_number, node } => {
-                let base = 0x100 * pdo_number as u32 + 0x080;
-                base | (node as u32)
+            CobId::PdoTx { pdo_id, node_id } => {
+                let base = 0x100 * pdo_id as u32 + 0x080;
+                base | (node_id as u32)
             }
-            CobId::PdoRx { pdo_number, node } => {
-                let base = 0x100 * pdo_number as u32 + 0x100;
-                base | (node as u32)
+            CobId::PdoRx { pdo_id, node_id } => {
+                let base = 0x100 * pdo_id as u32 + 0x100;
+                base | (node_id as u32)
             }
             CobId::SdoResponse(n) => 0x580 | (n as u32),
             CobId::SdoRequest(n) => 0x600 | (n as u32),
@@ -97,16 +97,16 @@ impl From<u32> for CobId {
             (fp, n) if (0x180..=0x480).contains(&fp) && (fp - 0x080) % 0x100 == 0 => {
                 let pdo = ((fp - 0x080) / 0x100) as u8;
                 CobId::PdoTx {
-                    pdo_number: pdo,
-                    node: n,
+                    pdo_id: pdo,
+                    node_id: n,
                 }
             }
             // PDO Rx [1..4]
             (fp, n) if (0x200..=0x500).contains(&fp) && (fp - 0x100) % 0x100 == 0 => {
                 let pdo = ((fp - 0x100) / 0x100) as u8;
                 CobId::PdoRx {
-                    pdo_number: pdo,
-                    node: n,
+                    pdo_id: pdo,
+                    node_id: n,
                 }
             }
 
