@@ -19,7 +19,6 @@ pub enum SdoInput<R, W, D: Dictionary> {
     Frame(CanFrame)
 }
 
-/*
 impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
 where
     D::Index: TryFrom<CanIndex> + Into<CanIndices>,
@@ -36,31 +35,25 @@ where
         }
     }
 
-    pub fn input(self: &mut Self, config: SdoConfig<R, W, D>) -> ClientOutput<N, RR, RW> {
-        match config {
-            SdoConfig::Read(ix, r) => {
-                if let Some(st) = self.sdo.observe() {
-                    if st.is_ready() {
-                        self.sdo.read(ix.into(), r);
-                        SdoConfigResult::Ok
-                    } else {
-                        SdoConfigResult::Busy
-                    }
+    pub fn input(self: &mut Self, input: SdoInput<R, W, D>) -> ClientOutput<N, RR, RW> {
+        use crate::sdo::machines::ClientOutput::*;
+        use crate::sdo::client::SdoInput::*;
+        
+        match input {
+            Read(ix, r) => {
+                if self.sdo.is_ready() {
+                    self.sdo.read(ix.into(), r)
                 } else {
-                    SdoConfigResult::Error
+                    Error(SdoError::Error)
                 }
             }
 
-            SdoConfig::Write(ix, x, r) => {
-                if let Some(st) = self.sdo.observe() {
-                    if st.is_ready() {
-                        self.sdo.write(ix.into(), x, r);
-                        SdoConfigResult::Ok
-                    } else {
-                        SdoConfigResult::Busy
-                    }
+            Write(ix, x, r) => {
+                if self.sdo.is_ready() {
+                    self.sdo.write(ix.into(), x, r)
+                
                 } else {
-                    SdoConfigResult::Error
+                    Error(SdoError::Error)
                 }
             }
         }
@@ -69,7 +62,6 @@ where
 
 }
 
-*/
 
 /*
 
