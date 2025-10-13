@@ -50,6 +50,23 @@ where
         self.map.insert(index, ix);
         self.objs.push((obj, size));
     }
+
+    pub fn update<T>(self: &mut Self, t: T)
+    where
+        T: DictionaryValue<D> + Into<D::Object> {
+        let index: D::Index = T::index();
+        let obj: D::Object = t.into();
+
+        match self.map.get(&index) {
+            None => { panic!("PDO Producer update: Handle miss case!") }
+            Some(p) => {
+                self.objs[*p].0 = obj;
+            }
+        }
+            
+        //self.map.insert(index, ix);
+        //self.objs.push((obj, size));
+    }
     
     pub fn serialize(self: &Self, node_id: u8) -> CanFrame {
         let mut data_out = [0; 8];
