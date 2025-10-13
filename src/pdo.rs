@@ -21,6 +21,35 @@ impl Into<CobId> for (PdoId, u8) {
     }
 }
 
+pub struct Consumer<D: Dictionary>
+{
+    id: PdoId,
+    map: FnvIndexMap<D::Index, usize, 8>,
+    objs: Vec<(D::Index, usize), 8>,
+}
+
+impl<D: Dictionary> Consumer<D>
+where
+    D::Index: core::hash::Hash + Eq + Copy + Into<CanIndices>,
+//    D::Object: IntoBuf
+{
+    pub fn new(id: PdoId) -> Self {
+        let objs = Vec::new();
+        let map = FnvIndexMap::new();
+        Self { id, objs, map }
+    }
+
+    pub fn push(self: &mut Self, index: D::Index) {
+        let ixs: CanIndices = index.into(); 
+        let size = ixs.can_type.size();
+        let ix = self.objs.len();
+        
+        self.map.insert(index, ix);
+        self.objs.push((index, size));
+    }
+}
+
+
 pub struct Producer<D: Dictionary> {
     id: PdoId,
     map: FnvIndexMap<D::Index, usize, 8>,
@@ -63,9 +92,6 @@ where
                 self.objs[*p].0 = obj;
             }
         }
-            
-        //self.map.insert(index, ix);
-        //self.objs.push((obj, size));
     }
     
     pub fn serialize(self: &Self, node_id: u8) -> CanFrame {
