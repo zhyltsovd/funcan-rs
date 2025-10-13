@@ -51,15 +51,17 @@ where
     pub fn deserialize<T, E>(self: &Self, index: D::Index, data_in: [u8; 8]) -> Result<T, E>
     where
         D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>,
-        E: for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
-        T: From<D::Object>
+        T: TryFrom<D::Object>,
+        E: for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error> + From<<T as TryFrom<D::Object>>::Error>,
+        
     {
         match self.map.get(&index) {
             None => { panic!("PDO Consumer deserialize: Handle miss case!") }
             Some(p) => {
                 let len = self.objs[*p];
                 let obj = D::Object::try_from((index, &data_in[*p .. *p + len]))?;
-                Ok(T::from(obj))
+                let t = T::try_from(obj)?;
+                Ok(t)
             }
         } 
     }    
