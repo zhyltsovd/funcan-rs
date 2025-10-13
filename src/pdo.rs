@@ -23,9 +23,9 @@ impl Into<CobId> for (PdoId, u8) {
 
 pub struct Consumer<D: Dictionary>
 {
-    id: PdoId,
+    // id: PdoId,
     map: FnvIndexMap<D::Index, usize, 8>,
-    objs: Vec<(D::Index, usize), 8>,
+    objs: Vec<usize, 8>,
 }
 
 impl<D: Dictionary> Consumer<D>
@@ -33,10 +33,10 @@ where
     D::Index: core::hash::Hash + Eq + Copy + Into<CanIndices>,
 //    D::Object: IntoBuf
 {
-    pub fn new(id: PdoId) -> Self {
+    pub fn new() -> Self {
         let objs = Vec::new();
         let map = FnvIndexMap::new();
-        Self { id, objs, map }
+        Self { objs, map }
     }
 
     pub fn push(self: &mut Self, index: D::Index) {
@@ -45,8 +45,24 @@ where
         let ix = self.objs.len();
         
         self.map.insert(index, ix);
-        self.objs.push((index, size));
+        self.objs.push(size);
     }
+
+    pub fn deserialize<T, E>(self: &Self, index: D::Index, data_in: [u8; 8]) -> Result<T, E>
+    where
+        D::Object: for<'a> TryFrom<(D::Index, &'a [u8])>,
+        E: for<'a> From<<D::Object as TryFrom<(D::Index, &'a [u8])>>::Error>,
+        T: From<D::Object>
+    {
+        match self.map.get(&index) {
+            None => { panic!("PDO Consumer deserialize: Handle miss case!") }
+            Some(p) => {
+                let len = self.objs[*p];
+                let obj = D::Object::try_from((index, &data_in[*p .. *p + len]))?;
+                Ok(T::from(obj))
+            }
+        } 
+    }    
 }
 
 
