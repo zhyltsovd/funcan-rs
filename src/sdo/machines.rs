@@ -120,7 +120,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         let req = if n <= 4 {
             self.state = ClientState::InitiateSingleDownload(n);
             let mut data = [0; 4];
-            data.copy_from_slice(&self.data[0..n]);
+            data[0..n].copy_from_slice(&self.data[0..n]);
 
             ClientRequest::InitSingleSegmentDownload(self.current_index, n as u8, data)
         } else {
@@ -772,6 +772,84 @@ mod tests {
                                 assert_eq!(n, 4);
                                 let downloaded_value =
                                     u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+                                assert_eq!(downloaded_value, value);
+                            } else {
+                                panic!("Wrong result download result: {:?}", result);
+                            }
+                        }
+
+                        ServerOutput::Error(err) => {
+                            panic!("Server error: {:?}", err);
+                        }
+                    }
+                }
+
+                ClientOutput::Done(res) => match res {
+                    ClientResult::DownloadCompleted(_) => {
+                        break;
+                    }
+
+                    _ => panic!("Wrong result!"),
+                },
+
+                ClientOutput::Error(err) => {
+                    panic!("Client error: {:?}", err);
+                }
+                
+                ClientOutput::TransferCompleted => {
+                    break;
+                }
+            }
+
+            gasoline = gasoline - 1;
+        }
+
+        if gasoline == 0 {
+            panic!("SDO exchange is stuck!");
+        }
+    }
+
+    #[test]
+    fn sdo_download_u16_value() {
+        let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
+        let mut server: ServerMachine<1024> = ServerMachine::default();
+
+        let base_index = CanBaseIndex(0x60c0);
+        let index = CanIndices {
+            base_index: base_index,
+            can_type: CanType::Base(2),
+        };
+        let value: u16 = 0xa5;
+
+        let fake_responder = ();
+
+        let mut client_out = client.write(index, value, fake_responder);
+
+        let mut gasoline = 10;
+
+        while gasoline > 0 {
+            let out = core::mem::replace(&mut client_out, ClientOutput::Error(SdoError::Busy));
+
+            match out {
+                ClientOutput::Output(req) => {
+                    let server_out = server.transit(req);
+
+                    match server_out {
+                        ServerOutput::Output(resp) => {
+                            client_out = client.transit(resp);
+                        }
+                        ServerOutput::Data(_) => {
+                            panic!("State mismatch");
+                        }
+
+                        ServerOutput::FinalOutput(resp, result) => {
+                            client_out = client.transit(resp.clone());
+
+                            if let ServerResult::DownloadCompleted(dindex, data, n) = result {
+                                assert_eq!(base_index.0, dindex.base);
+                                assert_eq!(n, 2);
+                                let downloaded_value =
+                                    u16::from_le_bytes([data[0], data[1]]);
                                 assert_eq!(downloaded_value, value);
                             } else {
                                 panic!("Wrong result download result: {:?}", result);
