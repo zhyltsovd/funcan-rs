@@ -118,6 +118,7 @@ pub enum ServerCommandSpecifier {
     DownloadSegmentAck,
     InitUpload,
     UploadSegment,
+    Abort,
 }
 
 impl Into<u8> for ServerCommandSpecifier {
@@ -127,6 +128,7 @@ impl Into<u8> for ServerCommandSpecifier {
             ServerCommandSpecifier::DownloadSegmentAck => 1 << 5,
             ServerCommandSpecifier::InitUpload => 2 << 5,
             ServerCommandSpecifier::UploadSegment => 0 << 5,
+            ServerCommandSpecifier::Abort => 4 << 5,
         }
     }
 }
@@ -140,6 +142,7 @@ impl TryFrom<u8> for ServerCommandSpecifier {
             0x20 => Ok(ServerCommandSpecifier::DownloadSegmentAck),
             0x40 => Ok(ServerCommandSpecifier::InitUpload),
             0x60 => Ok(ServerCommandSpecifier::InitDownloadAck),
+            0x80 => Ok(ServerCommandSpecifier::Abort),
             code => Err(Error::UnknownServerCommandSpecifier(code >> 5)),
         }
     }
@@ -304,6 +307,7 @@ pub enum ServerResponse {
     UploadMultiples(ToggleBit, bool, u8, [u8; 7]),
     DownloadInitAck(CanIndex),
     DownloadSegmentAck(ToggleBit),
+    Abort(CanIndex, AbortCode)
 }
 
 impl Into<[u8; 8]> for ServerResponse {
@@ -371,6 +375,15 @@ impl Into<[u8; 8]> for ServerResponse {
                 let code = cs | t;
                 req[0] = code;
             }
+
+            ServerResponse::Abort(ix, code) => {
+                let cs: u8 = ServerCommandSpecifier::DownloadSegmentAck.into();
+                let code_u32: u32 = code.into();
+                
+                req[0] = cs;
+                ix.write_to_slice(&mut req[1..4]);
+                req[4..8].copy_from_slice(&code_u32.to_le_bytes());
+            }
         };
 
         req
@@ -423,6 +436,12 @@ impl TryFrom<[u8; 8]> for ServerResponse {
 
             ServerCommandSpecifier::DownloadSegmentAck => {
                 Ok(ServerResponse::DownloadSegmentAck(req[0].into()))
+            }
+            
+            ServerCommandSpecifier::Abort => {
+                let abort_code = u32::from_le_bytes(req[4..8].try_into().unwrap());
+                let ix = CanIndex::read_from_slice(&req[1..4]);
+                Ok(ServerResponse::Abort(ix, abort_code.into()))
             }
         }
     }
