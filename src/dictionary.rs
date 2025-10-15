@@ -1,3 +1,5 @@
+use core::fmt::*;
+
 use heapless::vec::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,11 +37,18 @@ pub struct CanIndices {
     pub can_type: CanType,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CanIndex {
     pub base: u16,
     pub sub: u8,
 }
+
+impl Debug for CanIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "[{:x}:{:x}]", self.base, self.sub)
+    }
+}
+
 
 impl CanIndex {
     pub fn inc_sub(self: &mut Self) {
