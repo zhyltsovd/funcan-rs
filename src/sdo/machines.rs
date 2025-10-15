@@ -10,7 +10,7 @@ pub enum SdoError {
     ClientStateResponseMismatch(ClientState, ServerResponse),
     ServerStateResponseMismatch(ServerState, ClientRequest),
     CanIndexMismatch(CanIndex, CanIndex),
-    TransferAborted(AbortCode),
+    TransferAborted(CanIndex, AbortCode),
     ToggleMismatch,
     BufferOverflow,
     Busy,
@@ -296,6 +296,10 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                 }
             }
 
+            (_, Abort(ix, code)) => {
+                Error(SdoError::TransferAborted(ix, code))
+            }
+            
             // Default: Unexpected response
             (state, response) => Error(SdoError::ClientStateResponseMismatch(state.clone(), response)),
         }
