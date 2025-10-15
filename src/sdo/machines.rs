@@ -5,9 +5,10 @@ use crate::sdo::*;
 use heapless::vec::*;
 
 /// Possible errors during SDO communications
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum SdoError {
-    StateResponseMismatch,
+    ClientStateResponseMismatch(ClientState, ServerResponse),
+    ServerStateResponseMismatch(ServerState, ClientRequest),
     CanIndexMismatch(CanIndex, CanIndex),
     TransferAborted(AbortCode),
     ToggleMismatch,
@@ -18,7 +19,8 @@ pub enum SdoError {
 }
 
 /// Client states
-enum ClientState {
+#[derive(Debug, Clone)]
+pub enum ClientState {
     Idle,
     InitUploading,
     //    SingleSegmentUploaded,
@@ -295,13 +297,14 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
             }
 
             // Default: Unexpected response
-            (_state, _response) => Error(SdoError::StateResponseMismatch),
+            (state, response) => Error(SdoError::ClientStateResponseMismatch(state.clone(), response)),
         }
     }
 }
 
 /// Server states
-enum ServerState {
+#[derive(Debug, Clone)]
+pub enum ServerState {
     Idle,
     AwaitingData(bool),
     //    UploadingSingleSegment,
@@ -502,8 +505,8 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 }
             }
 
-            (_, _) => {
-                todo!()
+            (state, response) => {
+                Error(SdoError::ServerStateResponseMismatch(state.clone(), response))
             }
         }
     }
