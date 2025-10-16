@@ -2,9 +2,6 @@ use core::fmt::*;
 
 use heapless::vec::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CanBaseIndex(pub u16);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanType {
     Base(usize),
@@ -35,16 +32,23 @@ impl CanType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanIndices {
-    pub base_index: CanBaseIndex,
+pub struct CanDesc {
+    pub base_index: u16,
     pub can_type: CanType,
 }
 
-impl CanIndices {
+impl Default for CanDesc {
+    fn default() -> Self {
+        Self { base_index: 0, can_type: CanType::Base(0) }
+    }
+}
+
+
+impl CanDesc {
     pub fn initial_index(self: &Self) -> CanIndex {
         match &self.can_type {
             CanType::Base(_) => self.base_index.into(),
-            CanType::Field(_, sub) => CanIndex { base: self.base_index.0, sub: *sub }, 
+            CanType::Field(_, sub) => CanIndex { base: self.base_index, sub: *sub }, 
             CanType::Array(_) => self.base_index.into(),
             CanType::Struct(_) => self.base_index.into(),
         }
@@ -57,28 +61,21 @@ pub struct CanIndex {
     pub sub: u8,
 }
 
+impl Into<CanIndex> for u16 {
+    fn into(self: Self) -> CanIndex {
+        CanIndex { base: self, sub: 0 }
+    } 
+}
+
 impl Debug for CanIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "[{:x}:{:x}]", self.base, self.sub)
     }
 }
 
-
 impl CanIndex {
     pub fn inc_sub(self: &mut Self) {
         self.sub = self.sub + 1;
-    }
-}
-
-impl Into<CanIndex> for CanBaseIndex {
-    fn into(self: Self) -> CanIndex {
-        CanIndex::new(self.0, 0)
-    }
-}
-
-impl From<CanIndex> for CanBaseIndex {
-    fn from(val: CanIndex) -> Self {
-        CanBaseIndex(val.base)
     }
 }
 

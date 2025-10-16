@@ -10,10 +10,12 @@ pub enum SdoError {
     ClientStateResponseMismatch(ClientState, ServerResponse),
     ServerStateResponseMismatch(ServerState, ClientRequest),
     CanIndexMismatch(CanIndex, CanIndex),
-    TransferAborted(CanIndex, AbortCode),
+    TransferAborted(CanIndex, AbortCode),  
     ToggleMismatch,
     BufferOverflow,
     Busy,
+    DictionaryUnsupportedIndex(u16),
+    DictionaryDecodingFailure(u16),
     DecodingFailure(SdoDecodingError),
     NoResponder
 }
@@ -34,6 +36,7 @@ pub enum ClientState {
 
 /// Client context
 pub struct ClientMachine<const N: usize, RR, RW> {
+    current_desc: CanDesc,
     current_index: CanIndex,
     current_mode: Vec<u8, 254>,
     state: ClientState,
@@ -46,7 +49,7 @@ pub struct ClientMachine<const N: usize, RR, RW> {
 /// Possible final result that machine produces
 #[derive(Debug)]
 pub enum ClientResult<const N: usize, RR, RW> {
-    UploadCompleted(CanBaseIndex, [u8; N], usize, Option<RR>),
+    UploadCompleted(CanDesc, [u8; N], usize, Option<RR>),
     DownloadCompleted(Option<RW>),
 }
 
@@ -73,6 +76,7 @@ impl<const N: usize, RR, RW> Default for ClientMachine<N, RR, RW> {
         ClientMachine {
             read_responder: None,
             write_responder: None,
+            current_desc: CanDesc::default(),
             current_index: CanIndex::new(0, 0),
             current_mode: Vec::new(),
             state: ClientState::Idle,
@@ -91,22 +95,24 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         }
     }
     /// Initiates SDO read
-    pub fn read(self: &mut Self, indices: CanIndices, r: RR) -> ClientOutput<N, RR, RW> {
+    pub fn read(self: &mut Self, desc: CanDesc, r: RR) -> ClientOutput<N, RR, RW> {
         self.data_index = 0;
-        self.current_index = indices.initial_index();
-        self.current_mode = indices.can_type.is_compound();
+        self.current_desc = desc.clone();
+        self.current_index = desc.initial_index();
+        self.current_mode = desc.can_type.is_compound();
         self.read_responder = Some(r);
         self.init_upload()
     }
 
     /// Initiates SDO write
-    pub fn write<T>(self: &mut Self, indices: CanIndices, t: T, r: RW) -> ClientOutput<N, RR, RW>
+    pub fn write<T>(self: &mut Self, desc: CanDesc, t: T, r: RW) -> ClientOutput<N, RR, RW>
     where
         T: IntoBuf,
     {
         self.data_index = 0;
-        self.current_index = indices.initial_index();
-        self.current_mode = indices.can_type.is_compound();
+        self.current_desc = desc.clone();
+        self.current_index = desc.initial_index();
+        self.current_mode = desc.can_type.is_compound();
         let n = t.into_buf(&mut self.data);
         self.write_responder = Some(r);
 
@@ -139,7 +145,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
 
         let resp = core::mem::replace(&mut self.read_responder, None);
         let res = UploadCompleted(
-            self.current_index.into(),
+            self.current_desc.clone(),
             self.data.clone(),
             self.data_index,
             resp,
@@ -525,8 +531,8 @@ mod tests {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server: ServerMachine<1024> = ServerMachine::default();
 
-        let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {
+        let base_index = 0x6068;
+        let index = CanDesc {
             base_index: base_index,
             can_type: CanType::Base(4),
         };
@@ -549,7 +555,7 @@ mod tests {
                             client_out = client.transit(resp.clone());
                         }
                         ServerOutput::Data(sindex) => {
-                            if sindex.base == base_index.0 {
+                            if sindex.base == base_index {
                                 let data: [u8; 4] = value.to_le_bytes();
                                 if let ServerOutput::FinalOutput(resp, result) =
                                     server.upload_data(&data)
@@ -624,8 +630,8 @@ mod tests {
         types.push(2).unwrap();
         types.push(1).unwrap();
 
-        let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {
+        let base_index = 0x6068;
+        let index = CanDesc {
             base_index: base_index,
             can_type: CanType::Struct(types),
         };
@@ -654,7 +660,7 @@ mod tests {
                             //println!("{:?}", client_out);
                         }
                         ServerOutput::Data(sindex) => {
-                            if sindex.base == base_index.0 {
+                            if sindex.base == base_index {
                                 let r = match sindex.sub {
                                     0 => server.upload_data(&[value.p0]),
 
@@ -743,8 +749,8 @@ mod tests {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server: ServerMachine<1024> = ServerMachine::default();
 
-        let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {
+        let base_index = 0x6068;
+        let index = CanDesc {
             base_index: base_index,
             can_type: CanType::Base(4),
         };
@@ -775,7 +781,7 @@ mod tests {
                             client_out = client.transit(resp.clone());
 
                             if let ServerResult::DownloadCompleted(dindex, data, n) = result {
-                                assert_eq!(base_index.0, dindex.base);
+                                assert_eq!(base_index, dindex.base);
                                 assert_eq!(n, 4);
                                 let downloaded_value =
                                     u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
@@ -821,8 +827,8 @@ mod tests {
         let mut client: ClientMachine<1024, (), ()> = ClientMachine::default();
         let mut server: ServerMachine<1024> = ServerMachine::default();
 
-        let base_index = CanBaseIndex(0x60c0);
-        let index = CanIndices {
+        let base_index = 0x60c0;
+        let index = CanDesc {
             base_index: base_index,
             can_type: CanType::Base(2),
         };
@@ -853,7 +859,7 @@ mod tests {
                             client_out = client.transit(resp.clone());
 
                             if let ServerResult::DownloadCompleted(dindex, data, n) = result {
-                                assert_eq!(base_index.0, dindex.base);
+                                assert_eq!(base_index, dindex.base);
                                 assert_eq!(n, 2);
                                 let downloaded_value =
                                     u16::from_le_bytes([data[0], data[1]]);
@@ -920,8 +926,8 @@ mod tests {
         types.push(2).unwrap();
         types.push(1).unwrap();
 
-        let base_index = CanBaseIndex(0x6068);
-        let index = CanIndices {
+        let base_index = 0x6068;
+        let index = CanDesc {
             base_index: base_index,
             can_type: CanType::Struct(types),
         };
@@ -956,7 +962,7 @@ mod tests {
                         ServerOutput::FinalOutput(resp, result) => {
                             client_out = client.transit(resp.clone());
                             if let ServerResult::DownloadCompleted(dindex, data, n) = result {
-                                assert_eq!(base_index.0, dindex.base);
+                                assert_eq!(base_index, dindex.base);
                                 assert_eq!(n, 4);
 
                                 let p0 = data[0];

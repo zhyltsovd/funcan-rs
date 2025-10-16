@@ -21,7 +21,7 @@ pub enum SdoInput<R, W, D: Dictionary> {
 
 impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
 where
-    D::Index: TryFrom<CanBaseIndex> + Into<CanIndices>,
+    D::Index: TryFrom<CanDesc> + Into<CanDesc>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
@@ -81,6 +81,7 @@ where
     fn handle_sdo_result(self: &mut Self, r: ClientResult<N, R, W>) -> ClientOutput<N, R, W> {
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
+                let base_index = ix.base_index;
                 if let Ok(index) = <D as Dictionary>::Index::try_from(ix) {
                     if let Ok(x) = <D as Dictionary>::Object::try_from((index, &data[0..len])) {
                         if let Some(r) = maybe_r {
@@ -90,10 +91,10 @@ where
                             ClientOutput::Error(SdoError::NoResponder)
                         }
                     } else {
-                        todo!()
+                        ClientOutput::Error(SdoError::DictionaryDecodingFailure(base_index))
                     }                
                 } else {
-                    todo!()
+                    ClientOutput::Error(SdoError::DictionaryUnsupportedIndex(base_index))
                 }
             }
             ClientResult::DownloadCompleted(maybe_r) => {
@@ -117,7 +118,7 @@ where
 impl<const N: usize, R, W, D> MachineTrans<CanFrame> for SdoClient<N, R, W, D>
 where
     D: Dictionary,
-    D::Index: TryFrom<CanIndex> + Into<CanIndices>,
+    D::Index: TryFrom<CanIndex> + Into<CanDesc>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
     R: Responder<<D as Dictionary>::Object>,
     W: Responder<()>,
