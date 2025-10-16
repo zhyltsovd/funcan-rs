@@ -8,6 +8,7 @@ pub struct CanBaseIndex(pub u16);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CanType {
     Base(usize),
+    Field(usize, u8),
     Array(Vec<u8, 254>),
     Struct(Vec<u8, 254>),
 }
@@ -16,6 +17,7 @@ impl CanType {
     pub fn is_compound(self: &Self) -> Vec<u8, 254> {
         match self {
             CanType::Base(_) => Vec::new(),
+            CanType::Field(_, _) => Vec::new(),
             CanType::Array(ns) => ns.clone(),
             CanType::Struct(ns) => ns.clone(),
         }
@@ -24,6 +26,7 @@ impl CanType {
     pub fn size(self: &Self) -> usize {
         match self {
             CanType::Base(s) => *s,
+            CanType::Field(s, _) => *s,
             CanType::Array(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
             CanType::Struct(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
         }
@@ -35,6 +38,17 @@ impl CanType {
 pub struct CanIndices {
     pub base_index: CanBaseIndex,
     pub can_type: CanType,
+}
+
+impl CanIndices {
+    pub fn initial_index(self: &Self) -> CanIndex {
+        match &self.can_type {
+            CanType::Base(_) => self.base_index.into(),
+            CanType::Field(_, sub) => CanIndex { base: self.base_index.0, sub: *sub }, 
+            CanType::Array(_) => self.base_index.into(),
+            CanType::Struct(_) => self.base_index.into(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

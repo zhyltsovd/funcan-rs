@@ -93,7 +93,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     /// Initiates SDO read
     pub fn read(self: &mut Self, indices: CanIndices, r: RR) -> ClientOutput<N, RR, RW> {
         self.data_index = 0;
-        self.current_index = indices.base_index.into();
+        self.current_index = indices.initial_index();
         self.current_mode = indices.can_type.is_compound();
         self.read_responder = Some(r);
         self.init_upload()
@@ -105,7 +105,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         T: IntoBuf,
     {
         self.data_index = 0;
-        self.current_index = indices.base_index.into();
+        self.current_index = indices.initial_index();
         self.current_mode = indices.can_type.is_compound();
         let n = t.into_buf(&mut self.data);
         self.write_responder = Some(r);
