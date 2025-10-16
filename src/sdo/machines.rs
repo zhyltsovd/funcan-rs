@@ -5,7 +5,7 @@ use crate::sdo::*;
 use heapless::vec::*;
 
 /// Possible errors during SDO communications
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SdoError {
     ClientStateResponseMismatch(ClientState, ServerResponse),
     ServerStateResponseMismatch(ServerState, ClientRequest),
@@ -15,9 +15,75 @@ pub enum SdoError {
     BufferOverflow,
     Busy,
     DictionaryUnsupportedIndex(u16),
-    DictionaryDecodingFailure(u16),
+    DictionaryDecodingFailure(u16, Option<u8>),
     DecodingFailure(SdoDecodingError),
     NoResponder
+}
+
+impl core::fmt::Debug for SdoError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        use SdoError::*;
+        match self {
+            ClientStateResponseMismatch(cl, sv) => {
+                f.debug_tuple("ClientStateResponseMismatch")
+                 .field(cl)
+                 .field(sv)
+                 .finish()
+            }
+
+            ServerStateResponseMismatch(st, rq) => {
+                f.debug_tuple("ServerStateResponseMismatch")
+                 .field(st)
+                 .field(rq)
+                 .finish()
+            }
+
+            CanIndexMismatch(a, b) => {
+                write!(f,
+                       "CanIndexMismatch({:?}, {:?})",
+                       a,
+                       b)
+            }
+
+            TransferAborted(idx, code) => {
+                write!(f,
+                       "TransferAborted({:?}, {:?})",
+                       idx,
+                       code)
+            }
+
+            ToggleMismatch     => f.write_str("ToggleMismatch"),
+            BufferOverflow     => f.write_str("BufferOverflow"),
+            Busy               => f.write_str("Busy"),
+            NoResponder        => f.write_str("NoResponder"),
+
+            DictionaryUnsupportedIndex(idx) => {
+                write!(f, "DictionaryUnsupportedIndex({:#06X})", idx)
+            }
+
+            DictionaryDecodingFailure(idx, maybe_sub) => {
+                match maybe_sub {
+                    Some(sub) => write!(
+                        f,
+                        "DictionaryDecodingFailure({:#06X}, Some({:#04X}))",
+                        idx,
+                        sub
+                    ),
+                    None => write!(
+                        f,
+                        "DictionaryDecodingFailure({:#06X}, None)",
+                        idx
+                    ),
+                }
+            }
+
+            DecodingFailure(err) => {
+                f.debug_tuple("DecodingFailure")
+                 .field(err)
+                 .finish()
+            }
+        }
+    }
 }
 
 /// Client states

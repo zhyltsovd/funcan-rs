@@ -53,6 +53,13 @@ impl CanDesc {
             CanType::Struct(_) => self.base_index.into(),
         }
     }
+
+    pub fn is_field(self: &Self) -> Option<u8> {
+        match &self.can_type {
+            CanType::Field(_, sub) => Some(*sub), 
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

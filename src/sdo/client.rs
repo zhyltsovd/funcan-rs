@@ -82,6 +82,7 @@ where
         match r {
             ClientResult::UploadCompleted(ix, data, len, maybe_r) => {
                 let base_index = ix.base_index;
+                let maybe_sub = ix.is_field();
                 if let Ok(index) = <D as Dictionary>::Index::try_from(ix) {
                     if let Ok(x) = <D as Dictionary>::Object::try_from((index, &data[0..len])) {
                         if let Some(r) = maybe_r {
@@ -91,7 +92,7 @@ where
                             ClientOutput::Error(SdoError::NoResponder)
                         }
                     } else {
-                        ClientOutput::Error(SdoError::DictionaryDecodingFailure(base_index))
+                        ClientOutput::Error(SdoError::DictionaryDecodingFailure(base_index, maybe_sub))
                     }                
                 } else {
                     ClientOutput::Error(SdoError::DictionaryUnsupportedIndex(base_index))
