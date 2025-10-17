@@ -1,66 +1,6 @@
 use core::fmt::*;
 
-use heapless::vec::*;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CanType {
-    Base(usize),
-    Field(usize, u8),
-    Array(Vec<u8, 254>),
-    Struct(Vec<u8, 254>),
-}
-
-impl CanType {
-    pub fn is_compound(self: &Self) -> Vec<u8, 254> {
-        match self {
-            CanType::Base(_) => Vec::new(),
-            CanType::Field(_, _) => Vec::new(),
-            CanType::Array(ns) => ns.clone(),
-            CanType::Struct(ns) => ns.clone(),
-        }
-    }
-
-    pub fn size(self: &Self) -> usize {
-        match self {
-            CanType::Base(s) => *s,
-            CanType::Field(s, _) => *s,
-            CanType::Array(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
-            CanType::Struct(ns) => ns.iter().fold(0, |s, x| { s + *x as usize } ),
-        }
-    }
-    
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanDesc {
-    pub base_index: u16,
-    pub can_type: CanType,
-}
-
-impl Default for CanDesc {
-    fn default() -> Self {
-        Self { base_index: 0, can_type: CanType::Base(0) }
-    }
-}
-
-
-impl CanDesc {
-    pub fn initial_index(self: &Self) -> CanIndex {
-        match &self.can_type {
-            CanType::Base(_) => self.base_index.into(),
-            CanType::Field(_, sub) => CanIndex { base: self.base_index, sub: *sub }, 
-            CanType::Array(_) => self.base_index.into(),
-            CanType::Struct(_) => self.base_index.into(),
-        }
-    }
-
-    pub fn is_field(self: &Self) -> Option<u8> {
-        match &self.can_type {
-            CanType::Field(_, sub) => Some(*sub), 
-            _ => None,
-        }
-    }
-}
+//use heapless::vec::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CanIndex {
@@ -76,7 +16,7 @@ impl Into<CanIndex> for u16 {
 
 impl Debug for CanIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
-        write!(f, "[{:x}:{:x}]", self.base, self.sub)
+        write!(f, "{:x}:{:x}", self.base, self.sub)
     }
 }
 
@@ -84,7 +24,7 @@ impl CanIndex {
     pub fn inc_sub(self: &mut Self) {
         self.sub = self.sub + 1;
     }
-}
+} 
 
 impl CanIndex {
     pub fn new(base: u16, sub: u8) -> Self {

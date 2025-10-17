@@ -9,6 +9,10 @@ pub trait ClockInstant {
     fn duration_since(self: &Self, i: &Self) -> Duration;
 }
 
+pub trait CanSize {
+    fn can_size<'a>(self: &'a Self) -> usize;
+}
+
 pub trait IntoBuf {
     fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize;
 }

@@ -30,7 +30,7 @@ pub struct Consumer<D: Dictionary>
 
 impl<D: Dictionary> Consumer<D>
 where
-    D::Index: core::hash::Hash + Eq + Copy + Into<CanDesc>,
+    D::Index: core::hash::Hash + Eq + Copy + CanSize,
 //    D::Object: IntoBuf
 {
     pub fn new() -> Self {
@@ -40,8 +40,7 @@ where
     }
 
     pub fn push(self: &mut Self, index: D::Index) {
-        let ixs: CanDesc = index.into(); 
-        let size = ixs.can_type.size();
+        let size = index.can_size();
         let ix = self.objs.len();
         
         self.map.insert(index, ix);
@@ -76,7 +75,7 @@ pub struct Producer<D: Dictionary> {
 
 impl<D: Dictionary> Producer<D>
 where
-    D::Index: core::hash::Hash + Eq + Copy + Into<CanDesc>,
+    D::Index: core::hash::Hash + Eq + Copy + CanSize,
     D::Object: IntoBuf
 {
     pub fn new(id: PdoId) -> Self {
@@ -89,8 +88,7 @@ where
     where
         T: DictionaryValue<D> + Into<D::Object> {
         let index: D::Index = T::index();
-        let ixs: CanDesc = index.into(); 
-        let size = ixs.can_type.size();
+        let size = index.can_size();
         let obj: D::Object = t.into();
         let ix = self.objs.len();
         
