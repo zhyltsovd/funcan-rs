@@ -127,3 +127,15 @@ pub enum PdoMap<'a, D: Dictionary> {
     None,
     TxMapped(&'a Producer<D>)
 }
+
+pub fn pdo_map_param<D, T>() -> u32
+where
+    D: Dictionary,
+    D::Index: Copy + CanSize + Into<CanIndex>,
+    T: DictionaryValue<D>
+{
+    let index: D::Index = T::index();
+    let can_index: CanIndex = index.into();
+    let size = index.can_size() as u32;
+    ((can_index.base as u32) << 16) | ((can_index.sub as u32) << 8) | size
+}
