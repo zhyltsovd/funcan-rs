@@ -137,5 +137,5 @@ where
     let index: D::Index = T::index();
     let can_index: CanIndex = index.into();
     let size = index.can_size() as u32;
-    ((can_index.base as u32) << 16) | ((can_index.sub as u32) << 8) | size
+    ((can_index.base as u32) << 16) | ((can_index.sub as u32) << 8) | (size * 8)
 }
