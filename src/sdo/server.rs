@@ -6,7 +6,7 @@ use crate::sdo::machines::*;
 
 pub struct SdoServer<const N: usize, D> {
     pub sdo: ServerMachine<N>,
-    dictionary: D,
+    pub dictionary: D,
 }
 
 impl<const N: usize, D: Dictionary> SdoServer<N, D>
@@ -22,7 +22,7 @@ where
         }
     }
 
-    pub fn handle_frame(self: &mut Self, frame: CanFrame) -> ServerOutput<N> {
+    pub async fn handle_frame(self: &mut Self, frame: CanFrame) -> ServerOutput<N> {
         use crate::sdo::machines::ServerOutput::*;
 
         match ClientRequest::try_from(frame.data) {
@@ -41,7 +41,7 @@ where
                             if let Ok(index) = <D as Dictionary>::Index::try_from(dindex) {
                                 if let Ok(downloaded_value) = <D as Dictionary>::Object::try_from((index, &data[0..n])) {
                                     self.dictionary.set(downloaded_value);
-                                    Output(resp)
+                                    ServerOutput::FinalOutput(resp, result)
                                 } else {
                                     Error(SdoError::DictionaryDecodingFailure(dindex))
                                 }                
