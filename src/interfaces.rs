@@ -1,9 +1,14 @@
 use core::time::Duration;
-use core::futures::*;
+use futures::future::*;
 
 
 pub trait OneshotResponder<X> {
     fn respond(self, x: X) -> Result<(), X>;
+}
+
+pub trait AsyncResponder<X> {
+    type Error;
+    fn send(&self, x: X) -> BoxFuture<Result<(), Self::Error>>;
 }
 
 pub trait ClockInstant {
