@@ -1,6 +1,7 @@
 pub mod abort;
 pub mod client;
 pub mod machines;
+pub mod server;
 
 use core::ops::Not;
 
