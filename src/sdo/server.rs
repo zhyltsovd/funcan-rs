@@ -50,13 +50,8 @@ where
                             }
                             
                         } else {
-                            todo!()
+                            ServerOutput::FinalOutput(resp, result)
                         }
-                            //assert_eq!(index, dindex);
-                            //assert_eq!(n, 2);
-                            //let  =
-                            //    u16::from_le_bytes([data[0], data[1]]);
-                            //assert_eq!(downloaded_value, value);
                     }
 
                     out => out,
