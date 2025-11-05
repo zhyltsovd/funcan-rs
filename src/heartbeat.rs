@@ -35,7 +35,7 @@ impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
 
     pub fn check_state<R>(self: &Self, node_id: u8, r: R) -> bool
     where
-        R: Responder<ObservableNodeState>,
+        R: OneshotResponder<ObservableNodeState>,
     {
         let res = match self.node_states.get(&node_id) {
             None => r.respond(ObservableNodeState::NotFound),

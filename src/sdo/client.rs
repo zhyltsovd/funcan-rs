@@ -23,8 +23,8 @@ impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
 where
     D::Index: TryFrom<CanIndex> + Into<CanIndex>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
-    R: Responder<<D as Dictionary>::Object>,
-    W: Responder<()>,
+    R: OneshotResponder<<D as Dictionary>::Object>,
+    W: OneshotResponder<()>,
 {
     pub fn new(node: u8) -> Self {
         let sdo = ClientMachine::default();

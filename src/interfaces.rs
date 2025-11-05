@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-pub trait Responder<X> {
+pub trait OneshotResponder<X> {
     fn respond(self, x: X) -> Result<(), X>;
 }
 
