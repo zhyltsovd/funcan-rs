@@ -603,7 +603,7 @@ mod tests {
                                 panic!("Wrong final upload result: {:?}", result);
                             }
                         }
-
+ 
                         ServerOutput::Error(err) => {
                             panic!("Server error: {:?}", err);
                         }
