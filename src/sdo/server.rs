@@ -1,3 +1,4 @@
+use crate::interfaces::*;
 use crate::machine::*;
 use crate::raw::*;
 use crate::sdo::*;
@@ -11,7 +12,8 @@ pub struct SdoServer<const N: usize, D> {
 impl<const N: usize, D: Dictionary> SdoServer<N, D>
 where
     D: Default,
-    D::Index: From<CanIndex>, // + CanSize,
+    D::Index: From<CanIndex>,
+    D::Object: IntoBuf
 {
     pub fn new() -> Self { 
         Self {
@@ -31,11 +33,7 @@ where
                     ServerOutput::Data(sindex) => {
                         let index: D::Index = sindex.into();
                         let data = self.dictionary.get(&index);
-                        todo!()
-                        //let size = index.can_size;
-                        //let mut can_data = [0; size];
-                        //data.into_buf(&mut can_data);
-                        //self.sdo.upload_data(&can_data)
+                        self.sdo.upload_data(&data)
                     }
 
                     ServerOutput::FinalOutput(resp, result) => {
