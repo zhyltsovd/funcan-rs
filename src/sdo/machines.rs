@@ -383,7 +383,10 @@ impl<const N: usize> ServerMachine<N> {
         }
     }
 
-    pub fn upload_data(self: &mut Self, data: &[u8]) -> ServerOutput<N> {
+    pub fn upload_data<T>(self: &mut Self, data: &T) -> ServerOutput<N>
+    where
+        T: IntoBuf
+    {
         use crate::sdo::machines::ServerOutput::*;
         use crate::sdo::machines::ServerState::*;
         use crate::sdo::ServerResponse::*;
@@ -391,9 +394,10 @@ impl<const N: usize> ServerMachine<N> {
         //use crate::sdo::machines::ClientOutput::*;
 
         if let ServerState::AwaitingData(b) = self.state {
-            let n = data.len();
-            self.upload_length = n;
-            self.upload_data[0..n].copy_from_slice(data);
+            self.upload_length = data.into_buf(&mut self.upload_data);
+            //let n = data.len();
+            //self.upload_length = n;
+            //self.upload_data[0..n].copy_from_slice(data);
 
             if b {
                 self.state = Idle;
@@ -402,7 +406,6 @@ impl<const N: usize> ServerMachine<N> {
                 data[0..self.upload_length]
                     .copy_from_slice(&self.upload_data[0..self.upload_length]);
                 let response = UploadSingleSegment(self.index, self.upload_length as u8, data);
-                //Output(response)
                 ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
             } else {
                 let response_toggle = ToggleBit(false);
@@ -577,9 +580,8 @@ mod tests {
                         }
                         ServerOutput::Data(sindex) => {
                             if sindex == index {
-                                let data: [u8; 4] = value.to_le_bytes();
                                 if let ServerOutput::FinalOutput(resp, result) =
-                                    server.upload_data(&data)
+                                    server.upload_data(&value)
                                 {
                                     client_out = client.transit(resp);
                                     if let ServerResult::UploadCompleted = result {
