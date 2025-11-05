@@ -41,7 +41,7 @@ where
                             if let Ok(index) = <D as Dictionary>::Index::try_from(dindex) {
                                 if let Ok(downloaded_value) = <D as Dictionary>::Object::try_from((index, &data[0..n])) {
                                     self.dictionary.set(downloaded_value);
-                                    todo!() 
+                                    Output(resp)
                                 } else {
                                     Error(SdoError::DictionaryDecodingFailure(dindex))
                                 }                
