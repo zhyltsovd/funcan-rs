@@ -46,3 +46,12 @@ impl IntoBuf for u16 {
     }
 }
 
+impl IntoBuf for u8 {
+    fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize {
+        assert!(buf.len() >= 1);
+        buf[0] = *self;
+        1
+    }
+}
+
+
