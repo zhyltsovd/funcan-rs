@@ -12,7 +12,7 @@ pub struct SdoServer<const N: usize, D> {
 impl<const N: usize, D: Dictionary> SdoServer<N, D>
 where
     D: Default,
-    D::Index: From<CanIndex>,
+    D::Index: TryFrom<CanIndex>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf
 {
     pub fn new() -> Self { 
@@ -31,9 +31,13 @@ where
                 match server_out {
 
                     ServerOutput::Data(sindex) => {
-                        let index: D::Index = sindex.into();
-                        let data = self.dictionary.get(&index);
-                        self.sdo.upload_data(&data)
+                        if let Ok(index) = <D as Dictionary>::Index::try_from(sindex) {
+                            let data = self.dictionary.get(&index);
+                            self.sdo.upload_data(&data)
+                        } else {
+                            // send error
+                            todo!()
+                        }
                     }
 
                     ServerOutput::FinalOutput(resp, result) => {
