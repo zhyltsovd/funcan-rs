@@ -22,7 +22,7 @@ where
         }
     }
 
-    pub async fn handle_frame(self: &mut Self, frame: CanFrame) -> ServerOutput<N> {
+    pub fn handle_frame(self: &mut Self, frame: CanFrame) -> ServerOutput<N> {
         use crate::sdo::machines::ServerOutput::*;
 
         match ClientRequest::try_from(frame.data) {
