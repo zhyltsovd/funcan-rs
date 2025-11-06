@@ -14,7 +14,7 @@ publish = true
 
 [dependencies]
 paste = "*"
-futures = {version = "*", default-features = false, features = ["alloc"]}
+# futures = {version = "*", default-features = false, features = ["alloc"]}
 heapless = "*"
 
 [profile.release]
