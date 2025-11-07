@@ -15,7 +15,7 @@ publish = true
 [dependencies]
 paste = "*"
 # futures = {version = "*", default-features = false, features = ["alloc"]}
-heapless = "*"
+heapless = "0.9.1"
 
 [profile.release]
 opt-level = 3

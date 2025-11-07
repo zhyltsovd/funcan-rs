@@ -4,8 +4,6 @@ debug/
 target/
 obsolete/
 
-Cargo.lock
-
 **/*.rs.bk
 
 *.pdb
