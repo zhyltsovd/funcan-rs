@@ -1,5 +1,6 @@
-use heapless::vec::*;
-use heapless::index_map::*;
+//use heapless::vec::*;
+use heapless::*;
+//use heapless::index_map::*;
 
 use crate::raw::*;
 use crate::dictionary::*;
