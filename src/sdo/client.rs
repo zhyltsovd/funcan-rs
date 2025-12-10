@@ -48,6 +48,10 @@ where
         }
     }
 
+    pub fn reset(self: &mut Self) {
+        self.sdo.reset();
+    }
+    
     pub fn input(self: &mut Self, input: SdoInput<R, W, D>) -> ClientOutput<N, R, W> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::client::SdoInput::*;

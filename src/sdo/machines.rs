@@ -143,6 +143,15 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
             _ => false,
         }
     }
+
+    /// Reset state
+    pub fn reset(self: &mut Self) {
+        self.read_responder = None;
+        self.write_responder = None;
+        self.state = ClientState::Idle;
+        self.data_index = 0;
+    } 
+    
     /// Initiates SDO read
     pub fn read(self: &mut Self, ix: CanIndex, r: RR) -> ClientOutput<N, RR, RW> {
         self.data_index = 0;
