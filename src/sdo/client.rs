@@ -19,6 +19,19 @@ pub enum SdoInput<R, W, D: Dictionary> {
     Frame(CanFrame)
 }
 
+impl<R, W, D: Dictionary> core::fmt::Debug for SdoInput<R, W, D>
+where
+    D::Index: core::fmt::Debug
+{
+    fn fmt(self: &Self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            SdoInput::Read(ix, _) => write!(f, "Чтение объекта {:?}", ix),
+            SdoInput::Write(ix, _, _) => write!(f, "Запись объекта {:?}", ix),
+            SdoInput::Frame(_) => write!(f, "Обработчка SDO фрейма"),
+        } 
+    }
+}
+
 impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
 where
     D::Index: TryFrom<CanIndex> + Into<CanIndex>,
