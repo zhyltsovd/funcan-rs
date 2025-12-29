@@ -25,6 +25,7 @@ where
 {
     fn fmt(self: &Self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+//            SdoInput::Reset => write!(f, "Сброс"),
             SdoInput::Read(ix, _) => write!(f, "Чтение объекта {:?}", ix),
             SdoInput::Write(ix, _, _) => write!(f, "Запись объекта {:?}", ix),
             SdoInput::Frame(_) => write!(f, "Обработчка SDO фрейма"),

@@ -63,7 +63,7 @@ impl Into<NmtCommand> for NmtState {
             NmtState::Operational => NmtCommand::StartRemoteNode,
             NmtState::Stopped => NmtCommand::StopRemoteNode,
             NmtState::Initialization => NmtCommand::ResetNode,
-            NmtState::PreOperational => NmtCommand::ResetCommunication,
+            NmtState::PreOperational => NmtCommand::EnterPreOperational,
         }
     }
 }
