@@ -89,7 +89,7 @@ impl Into<CanFrame> for NmtRequest {
         data[1] = node_id_byte;
 
         CanFrame {
-            cobid: CobId::NmtService, // NMT uses COB‐ID = 0
+            cobid: CobId::NmtService(specifier, node_id_byte), // NMT uses COB‐ID = 0
             len: 2,                   // only 2 bytes valid
             data: data,
         }

@@ -8,7 +8,7 @@ use core::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CobId {
     /// NMT management service (always uses COB-ID 0x000).  Data[0] = cmd, Data[1] = node.
-    NmtService,
+    NmtService(u8, u8),
 
     /// Synchronization object (COB-ID = 0x080).  Data may carry SYNC counter (optional).
     Sync,
@@ -50,7 +50,7 @@ const FUNC_MASK: u32 = 0x780; // next 4 bits << 7
 impl From<CobId> for u32 {
     fn from(c: CobId) -> u32 {
         match c {
-            CobId::NmtService => 0x000,
+            CobId::NmtService(d0, d1) => ((d0 as u32) << 8) | d1 as u32,
             CobId::Sync => 0x080,
             CobId::TimeStamp => 0x100,
             CobId::Emergency(n) => 0x080 | (n as u32),
@@ -76,12 +76,12 @@ impl From<u32> for CobId {
         let node = (raw & NODE_MASK) as u8;
         match (func, node) {
             // NMT service is always COB-ID = 0x000
-            (0x000, _) => {
+            (0x000, node) => {
                 // data[0] and data[1] must be examined by caller
                 // to figure out the actual NmtCommand and target node,
                 // so we just return a placeholder here.
                 // Application code can then decode actual bytes.
-                CobId::NmtService
+                CobId::NmtService((raw >> 8) as u8, node)
             }
 
             // Sync object
