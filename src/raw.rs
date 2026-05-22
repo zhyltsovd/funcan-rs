@@ -143,8 +143,7 @@ pub struct CanFrame {
 
 impl fmt::Debug for CanFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let cobid: u32 = self.cobid.into();
-        write!(f, "{:#X}: [", cobid)?;
+        write!(f, "{:?}: [", self.cobid)?;
         for i in 0..self.len {
             if i > 0 {
                 write!(f, ", ")?;
@@ -215,7 +214,6 @@ impl CanFrame {
 mod tests {
     use super::*;
 
-    /*
     #[test]
     fn test_serialization_deserialization() {
         let frame = CanFrame {
@@ -224,12 +222,11 @@ mod tests {
             data: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11],
         };
 
-        let mut buffer = [0u8; 16];
+        let mut buffer = [0u8; 13];
         frame.write_to_slice(&mut buffer);
 
         let deserialized_frame = CanFrame::read_from_slice(&buffer);
 
         assert_eq!(frame, deserialized_frame);
     }
-    */
 }
