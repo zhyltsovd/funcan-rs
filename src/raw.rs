@@ -183,7 +183,7 @@ impl CanFrame {
         buffer[0] = self.len as u8;
 
         // Write CAN data
-        buffer[6..14].copy_from_slice(&self.data);
+        buffer[5..13].copy_from_slice(&self.data);
     }
 
     /// Deserializes a `CanFrame` from a byte slice.
@@ -199,13 +199,13 @@ impl CanFrame {
         assert!(buffer.len() >= 13, "Buffer must be at least 13 bytes long");
 
         // Read COB-ID from little endian bytes
-        let cobid = u32::from_le_bytes(buffer[1..4].try_into().unwrap()).into();
+        let cobid = u32::from_le_bytes(buffer[1..5].try_into().unwrap()).into();
 
         // Read length
         let len = buffer[0] as usize;
 
         // Read CAN data
-        let data = buffer[6..14].try_into().unwrap();
+        let data = buffer[5..13].try_into().unwrap();
 
         CanFrame { cobid, len, data }
     }
