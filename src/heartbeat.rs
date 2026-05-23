@@ -35,22 +35,27 @@ impl<const N: usize, I: ClockInstant> HeartbeatMachine<N, I> {
         }
     }
 
+    pub fn get_state(self: &Self, node_id: u8) -> ObservableNodeState {
+        match self.node_states.get(&node_id) {
+            None => ObservableNodeState::NotFound,
+            
+            Some(node) => {
+                let now = I::now();
+                if now.duration_since(&node.beat) > self.timeout {
+                    ObservableNodeState::Lost
+                } else {
+                    ObservableNodeState::Alive(node.state)
+                }
+            }
+        }
+    } 
+    
     pub fn check_state<R>(self: &Self, node_id: u8, r: R) -> bool
     where
         R: OneshotResponder<ObservableNodeState>,
     {
-        let res = match self.node_states.get(&node_id) {
-            None => r.respond(ObservableNodeState::NotFound),
-
-            Some(node) => {
-                let now = I::now();
-                if now.duration_since(&node.beat) > self.timeout {
-                    r.respond(ObservableNodeState::Lost)
-                } else {
-                    r.respond(ObservableNodeState::Alive(node.state))
-                }
-            }
-        };
+        let st = self.get_state(node_id);
+        let res = r.respond(st);
 
         res.is_ok()
     }
