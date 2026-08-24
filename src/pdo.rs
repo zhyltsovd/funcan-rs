@@ -68,13 +68,14 @@ where
 }
 
 
-pub struct Producer<D: Dictionary> {
+pub struct Producer<D: Dictionary, F: CanFrame> {
     id: PdoId,
     map: FnvIndexMap<D::Index, usize, 8>,
     objs: Vec<(D::Object, usize), 8>,
+    _frame: core::marker::PhantomData<F>,
 }
 
-impl<D: Dictionary> Producer<D>
+impl<D: Dictionary, F: CanFrame> Producer<D, F>
 where
     D::Index: core::hash::Hash + Eq + Copy + CanSize,
     D::Object: IntoBuf
@@ -82,7 +83,12 @@ where
     pub fn new(id: PdoId) -> Self {
         let objs = Vec::new();
         let map = FnvIndexMap::new();
-        Self { id, objs, map }
+        Self {
+            id,
+            objs,
+            map,
+            _frame: core::marker::PhantomData,
+        }
     }
 
     pub fn push<T>(self: &mut Self, t: T)
@@ -111,7 +117,7 @@ where
         }
     }
     
-    pub fn serialize(self: &Self, node_id: u8) -> CanFrame {
+    pub fn serialize(self: &Self, node_id: u8) -> F {
         let mut data_out = [0; 8];
         let mut ix = 0;
         for (o, len) in self.objs.iter() {
@@ -120,13 +126,13 @@ where
         }
 
         let cobid: CobId = (self.id, node_id).into();
-        CanFrame { cobid: cobid, len: ix, data: data_out} 
+        F::from_parts(cobid, ix, data_out)
     }
 }
 
-pub enum PdoMap<'a, D: Dictionary> {
+pub enum PdoMap<'a, D: Dictionary, F: CanFrame> {
     None,
-    TxMapped(&'a Producer<D>)
+    TxMapped(&'a Producer<D, F>)
 }
 
 pub fn pdo_map_param<D, T>() -> u32

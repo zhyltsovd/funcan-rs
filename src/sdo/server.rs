@@ -1,14 +1,17 @@
+use core::marker::PhantomData;
+
 use crate::interfaces::*;
 use crate::raw::*;
 use crate::sdo::*;
 use crate::sdo::machines::*;
 
-pub struct SdoServer<const N: usize, D> {
+pub struct SdoServer<const N: usize, F: CanFrame, D> {
     pub sdo: ServerMachine<N>,
     pub dictionary: D,
+    _frame: PhantomData<F>,
 }
 
-impl<const N: usize, D: Dictionary> SdoServer<N, D>
+impl<const N: usize, F: CanFrame, D: Dictionary> SdoServer<N, F, D>
 where
     D: Default,
     D::Index: TryFrom<CanIndex>,
@@ -17,14 +20,15 @@ where
     pub fn new() -> Self { 
         Self {
             sdo: ServerMachine::default(),
-            dictionary: D::default()
+            dictionary: D::default(),
+            _frame: PhantomData,
         }
     }
 
-    pub fn handle_frame(self: &mut Self, frame: CanFrame) -> ServerOutput<N> {
+    pub fn handle_frame(self: &mut Self, frame: F) -> ServerOutput<N> {
         use crate::sdo::machines::ServerOutput::*;
 
-        let server_out = self.sdo.transit_frame(frame.data);
+        let server_out = self.sdo.transit_frame(frame.data());
         match server_out {
 
             ServerOutput::Data(sindex) => {

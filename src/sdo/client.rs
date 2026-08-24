@@ -6,13 +6,13 @@ use crate::raw::*;
 use crate::sdo::machines::*;
 use crate::sdo::*;
 
-pub struct SdoClient<const N: usize, R, W, D> {
+pub struct SdoClient<const N: usize, F: CanFrame, R, W, D> {
     pub node: u8,
     pub sdo: ClientMachine<N, R, W>,
-    _phantom: PhantomData<D>,
+    _phantom: PhantomData<(F, D)>,
 }
 
-pub enum SdoInput<R, W, D: Dictionary> {
+pub enum SdoInput<F: CanFrame, R, W, D: Dictionary> {
     Read(D::Index, R),
     Write(D::Index, D::Object, W),
     /// Block upload (CiA 301 7.2.4.8): read the object using the block
@@ -21,10 +21,10 @@ pub enum SdoInput<R, W, D: Dictionary> {
     /// Block download (CiA 301 7.2.4.7): write the object using the block
     /// transfer protocol.
     BlockWrite(D::Index, D::Object, W),
-    Frame(CanFrame)
+    Frame(F)
 }
 
-impl<R, W, D: Dictionary> core::fmt::Debug for SdoInput<R, W, D>
+impl<F: CanFrame, R, W, D: Dictionary> core::fmt::Debug for SdoInput<F, R, W, D>
 where
     D::Index: core::fmt::Debug
 {
@@ -40,7 +40,7 @@ where
     }
 }
 
-impl<const N: usize, R, W, D: Dictionary> SdoClient<N, R, W, D>
+impl<const N: usize, F: CanFrame, R, W, D: Dictionary> SdoClient<N, F, R, W, D>
 where
     D::Index: TryFrom<CanIndex> + Into<CanIndex>,
     D::Object: for<'a> TryFrom<(D::Index, &'a [u8])> + IntoBuf,
@@ -60,7 +60,7 @@ where
         self.sdo.reset();
     }
     
-    pub fn input(self: &mut Self, input: SdoInput<R, W, D>) -> ClientOutput<N, R, W> {
+    pub fn input(self: &mut Self, input: SdoInput<F, R, W, D>) -> ClientOutput<N, R, W> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::client::SdoInput::*;
         
@@ -99,7 +99,7 @@ where
             }
 
             Frame(frame) => {
-                let result = self.sdo.transit_frame(frame.data);
+                let result = self.sdo.transit_frame(frame.data());
 
                 if let Done(r) = result {
                     self.handle_sdo_result(r)

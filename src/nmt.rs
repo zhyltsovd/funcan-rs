@@ -75,8 +75,36 @@ pub struct NmtRequest {
     pub target: NodeTarget,
 }
 
-impl Into<CanFrame> for NmtRequest {
-    fn into(self) -> CanFrame {
+impl From<NmtRequest> for CanFrame16 {
+    fn from(req: NmtRequest) -> CanFrame16 {
+        let (cobid, data) = req.into_parts();
+        CanFrame16::from_parts(cobid, 2, data)
+    }
+}
+
+impl From<NmtRequest> for CanFrame13 {
+    fn from(req: NmtRequest) -> CanFrame13 {
+        let (cobid, data) = req.into_parts();
+        CanFrame13::from_parts(cobid, 2, data)
+    }
+}
+
+impl From<CanFrame16> for NmtRequest {
+    fn from(frame: CanFrame16) -> Self {
+        Self::from_frame_payload(frame.data())
+    }
+}
+
+impl From<CanFrame13> for NmtRequest {
+    fn from(frame: CanFrame13) -> Self {
+        Self::from_frame_payload(frame.data())
+    }
+}
+
+impl NmtRequest {
+    /// Splits the request into the NMT COB-ID and the 2-byte payload
+    /// (command specifier, target node).
+    fn into_parts(self) -> (CobId, [u8; 8]) {
         // Translate our high‐level command into the 1‐byte NMT command specifier
         let specifier: u8 = self.cmd as u8;
 
@@ -88,17 +116,11 @@ impl Into<CanFrame> for NmtRequest {
         data[0] = specifier;
         data[1] = node_id_byte;
 
-        CanFrame {
-            cobid: CobId::NmtService(specifier, node_id_byte), // NMT uses COB‐ID = 0
-            len: 2,                   // only 2 bytes valid
-            data: data,
-        }
+        (CobId::NmtService(specifier, node_id_byte), data)
     }
-}
 
-impl From<CanFrame> for NmtRequest {
-    fn from(frame: CanFrame) -> Self {
-        let cmd = match frame.data[0] {
+    fn from_frame_payload(data: [u8; 8]) -> Self {
+        let cmd = match data[0] {
             0x01 => NmtCommand::StartRemoteNode,
             0x02 => NmtCommand::StopRemoteNode,
             0x80 => NmtCommand::EnterPreOperational,
@@ -107,12 +129,55 @@ impl From<CanFrame> for NmtRequest {
             _ => unreachable!(),
         };
 
-        let target = if frame.data[1] == 0 {
+        let target = if data[1] == 0 {
             NodeTarget::All
         } else {
-            NodeTarget::Node(frame.data[1])
+            NodeTarget::Node(data[1])
         };
 
         NmtRequest { cmd, target }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nmt_request_to_from_16() {
+        let req = NmtRequest {
+            cmd: NmtCommand::StartRemoteNode,
+            target: NodeTarget::All,
+        };
+
+        let frame: CanFrame16 = req.into();
+        assert_eq!(frame.cobid(), CobId::NmtService(0x01, 0));
+        assert_eq!(frame.len(), 2);
+        let data = frame.data();
+        assert_eq!(data[0], 0x01);
+        assert_eq!(data[1], 0x00);
+
+        let back = NmtRequest::from(frame);
+        assert_eq!(back.cmd, NmtCommand::StartRemoteNode);
+        assert_eq!(back.target, NodeTarget::All);
+    }
+
+    #[test]
+    fn nmt_request_to_from_13() {
+        let req = NmtRequest {
+            cmd: NmtCommand::EnterPreOperational,
+            target: NodeTarget::Node(7),
+        };
+
+        let frame: CanFrame13 = req.into();
+        assert_eq!(frame.cobid(), CobId::NmtService(0x80, 7));
+        assert_eq!(frame.len(), 2);
+        let data = frame.data();
+        assert_eq!(data[0], 0x80);
+        assert_eq!(data[1], 0x07);
+
+        let back = NmtRequest::from(frame);
+        assert_eq!(back.cmd, NmtCommand::EnterPreOperational);
+        assert_eq!(back.target, NodeTarget::Node(7));
     }
 }

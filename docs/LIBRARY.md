@@ -22,7 +22,7 @@ audiences:
 | Attribute | Value |
 |---|---|
 | Crate name | `funcan-rs` |
-| Version | 0.2.1 (single crate, **not** a workspace) |
+| Version | 0.3.0 (branch `dsh-frames`; 0.2.1 on `dsh`) — single crate, **not** a workspace |
 | License | MIT |
 | Repository | https://github.com/zhyltsovd/funcan-rs |
 | Edition / toolchain | 2021, `rust-toolchain.toml` pins channel `1.85` |
@@ -30,13 +30,15 @@ audiences:
 | Build scripts | none (`build.rs` absent) |
 | Target configs | none (`memory.x`, `.env`, `config/` absent) — platform independent |
 | Dependencies | `heapless =0.8` (exact), `paste = "*"` |
-| Tests | 44 library tests (`cargo test`) |
+| Tests | 48 library tests (`cargo test`) |
 | Status | Early stage; SDO (expedited / segmented / block) is the most complete service |
 
 The library provides **codecs, state machines, and facades** for CANopen services. It
-does **not** include a CAN hardware driver: applications feed raw 8-byte payloads in
-(`CanFrame`) and receive frames to transmit out. All protocol state machines are
-synchronous and caller-driven (Mealy machines).
+does **not** include a CAN hardware driver: applications feed raw frame payloads in
+(`CanFrame16` / `CanFrame13` implement the `CanFrame` trait) and receive frames to
+transmit out. All protocol state machines are synchronous and caller-driven (Mealy
+machines). The required frame format is selected at compile time per device (see
+`docs/FORMAT.md`).
 
 ### Working-tree state
 
@@ -86,7 +88,7 @@ funcan-rs (no_std lib)
 
 | Module | Path | Responsibility |
 |---|---|---|
-| `raw` | `src/raw.rs` | `CanFrame{cobid, len, data:[u8;8]}` + `CobId` enum with bidirectional CiA 301 function-code mapping; custom 13-byte (de)serialization |
+| `raw` | `src/raw.rs` | `CanFrame` trait (parametric over the wire format) with two impls: `CanFrame16` (16-byte SocketCAN-style, LE COB-ID) and `CanFrame13` (13-byte compact, BE COB-ID); `CobId` enum with bidirectional CiA 301 function-code mapping |
 | `machine` | `src/machine.rs` | `MealyMachine<X,Y>` trait + `MorphMachine` decode/encode adapter — the architectural backbone |
 | `interfaces` | `src/interfaces.rs` | Driver-facing traits: `OneshotResponder`, `ClockInstant`, `CanSize`, `IntoBuf` (impls: u8, u16, u32, `[u8; K]`) |
 | `dictionary` | `src/dictionary.rs` | `CanIndex{base:u16, sub:u8}` (+ LE 3-byte codec), `Dictionary`, `DictionaryValue` |
@@ -149,6 +151,21 @@ timeouts anywhere in the protocol machines (documented limitation).
 ### 6.1 Frames & identifiers — `raw`
 
 ```rust
+pub trait CanFrame: Clone + Copy + PartialEq + Eq + Debug + Default {
+    const WIRE_SIZE: usize;                                    // 16 or 13
+    fn from_parts(cobid: CobId, len: usize, data: [u8; 8]) -> Self;
+    fn cobid(&self) -> CobId;
+    fn len(&self) -> usize;
+    fn data(&self) -> [u8; 8];
+    fn write_to_slice(&self, buffer: &mut [u8]);               // asserts WIRE_SIZE
+    fn read_from_slice(buffer: &[u8]) -> Self;                 // asserts WIRE_SIZE
+}
+
+// 16-byte SocketCAN-style:  [cobid LE 4][len 1][pad 3][data 8]  (CAN sockets / USB-CANABLE)
+pub struct CanFrame16 { pub cobid: CobId, pub len: usize, pub data: [u8; 8] }
+// 13-byte compact:          [len 1][cobid BE 4][data 8]         (Ethernet-to-CAN adapters)
+pub struct CanFrame13 { pub cobid: CobId, pub len: usize, pub data: [u8; 8] }
+
 pub enum CobId {
     NmtService(u8, u8),  // 0x000, carries cmd+node in the payload
     Sync,                // 0x080
@@ -161,13 +178,16 @@ pub enum CobId {
     Heartbeat(u8),       // 0x700 + node
     ManufacturerSpecific(u16),
 }
-pub struct CanFrame { pub cobid: CobId, pub len: usize, pub data: [u8; 8] }
 ```
 
-`CanFrame::write_to_slice/read_from_slice` use a **custom 13-byte format**
-(`buf[0]=len`, `buf[1..5]=COB-ID big-endian`, `buf[5..13]=data`) — an internal
-test/interop convenience, **not** a CAN-controller frame format. Note the code
-comments there say "little endian" but the implementation is big-endian.
+The frame type is a compile-time parameter of every facade that touches the wire
+(`SdoClient<N, F, …>`, `SdoServer<N, F, …>`, `SdoInput::Frame(F)`,
+`Producer<D, F>::serialize`, `NmtRequest ↔ F` conversions). The protocol machines
+are frame-agnostic and only see `CobId` + `[u8; 8]`.
+
+`write_to_slice`/`read_from_slice` are **per-format** — do not assume one wire
+format when porting; see `docs/FORMAT.md` for the exact byte layouts and the
+historical rationale.
 
 ### 6.2 Dictionary — `dictionary`
 
@@ -373,10 +393,11 @@ segment's padding never overflows the `[u8; N]` data buffers.
 use funcan_rs::sdo::client::{SdoClient, SdoInput};
 use funcan_rs::sdo::machines::{ClientOutput, SdoError};
 use funcan_rs::sdo::ClientRequest;
-use funcan_rs::raw::{CanFrame, CobId};
+use funcan_rs::raw::{CanFrame13, CobId};   // or CanFrame16 for SocketCAN devices
 
 // D: your Dictionary; R/W: your responder types (e.g. a channel or closure)
-let mut client: SdoClient<1024, R, W, MyDict> = SdoClient::new(node_id);
+// F: the frame format of your device — CanFrame13 (Ethernet-to-CAN) or CanFrame16 (USB-CANABLE)
+let mut client: SdoClient<1024, CanFrame13, R, W, MyDict> = SdoClient::new(node_id);
 
 // --- segmented read / write ---
 let out = client.input(SdoInput::Read(index, responder));
@@ -386,14 +407,14 @@ let out = client.input(SdoInput::Write(index, value, responder));
 let mut out = client.input(SdoInput::BlockWrite(index, value, responder));
 loop {
     match out {
-        ClientOutput::Output(req) => send_frame(make_can_frame(CobId::SdoRequest(node_id), req)),
+        ClientOutput::Output(req) => send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into())),
         ClientOutput::NoFrame => {}                       // nothing to send
         ClientOutput::Error(e) => { /* handle */ break }
         _ => break,                                       // Done / TransferCompleted
     }
     // when the machine is mid-sub-block, pump remaining segments:
     if let Some(req) = client.pump() {
-        send_frame(make_can_frame(CobId::SdoRequest(node_id), req));
+        send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into()));
         continue;
     }
     // else wait for the next incoming frame and feed it back:
@@ -404,39 +425,42 @@ loop {
 ### 8.2 SDO server
 
 ```rust
-let mut server: SdoServer<1024, MyDict> = SdoServer::new();   // D: Default
+let mut server: SdoServer<1024, CanFrame13, MyDict> = SdoServer::new();   // D: Default
 
 // per incoming frame (COB-ID 0x600 + node):
 let out = server.handle_frame(frame);
 match out {
-    ServerOutput::Output(resp) => send_frame(make_can_frame(CobId::SdoResponse(node_id), resp)),
+    ServerOutput::Output(resp) => send_frame(CanFrame13::from_parts(CobId::SdoResponse(node_id), 8, resp.into())),
     ServerOutput::FinalOutput(_, ServerResult::DownloadCompleted(..)) => { /* dictionary already updated */ }
     // ServerOutput::Data is handled internally by handle_frame via the Dictionary
     _ => {}
 }
 // mid-block upload: emit remaining segments
 while let Some(resp) = server.pump() {
-    send_frame(make_can_frame(CobId::SdoResponse(node_id), resp));
+    send_frame(CanFrame13::from_parts(CobId::SdoResponse(node_id), 8, resp.into()));
 }
 ```
 
 ### 8.3 Frame construction
 
 `ClientRequest` / `ServerResponse` convert to payloads via `Into<[u8;8]>` (and back
-via `TryFrom`, except segments — see §7.4). Combine with `CobId` and `CanFrame`:
+via `TryFrom`, except segments — see §7.4). Combine with `CobId` and the frame type:
 
 ```rust
 let data: [u8; 8] = req.into();
-let frame = CanFrame { cobid: CobId::SdoRequest(node_id), len: 8, data };
+let frame = CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, data);
+// or CanFrame16::from_parts(...) — same logical frame, different wire bytes
 ```
 
 ### 8.4 CAN driver port
 
-`CanFrame` is the library's wire type. Write an adapter that converts
-`CanFrame{cobid, len, data}` to/from your controller's frame type. The `CobId` → u32
-mapping is `impl From<CobId> for u32` in `raw.rs`. There is no `embedded-can` or
-`embedded-hal` dependency; the 13-byte `read_from_slice`/`write_to_slice` format is
-not a hardware format.
+The frame trait `CanFrame` (impls `CanFrame16`, `CanFrame13`) is the library's wire
+type. Write an adapter that converts `F::cobid()/len()/data()` to/from your
+controller's frame type, or reuse `write_to_slice`/`read_from_slice` for buffers
+that match the 13-byte or 16-byte layout. The `CobId` → u32 mapping is
+`impl From<CobId> for u32` in `raw.rs`. There is no `embedded-can` or
+`embedded-hal` dependency; the slice formats are per-format (see `docs/FORMAT.md`)
+and are not controller formats.
 
 ---
 
@@ -444,7 +468,7 @@ not a hardware format.
 
 ```sh
 cargo check          # clean; only pre-existing warnings (raw.rs unused d0/d1, pdo.rs unused Results)
-cargo test           # 44 tests, all pass
+cargo test           # 48 tests, all pass
 cargo test --lib     # same suite (lib tests)
 ```
 
@@ -452,7 +476,8 @@ cargo test --lib     # same suite (lib tests)
 
 | Area | File | Tests |
 |---|---|---|
-| Frame codec (round-trip) | `src/raw.rs` | serialization/deserialization |
+| Frame formats (golden vectors, round-trips, generic) | `src/raw.rs` | 13-byte and 16-byte serialization vectors, `round_trip<F: CanFrame>` for both |
+| NMT ↔ frame conversions | `src/nmt.rs` | `NmtRequest` ↔ `CanFrame16` / `CanFrame13` |
 | `CanIndex` codec | `src/dictionary.rs` | write/read/inverse |
 | SDO segmented codecs (CiA 301 vectors) | `src/sdo.rs` | client upload/download init/segments, server responses, abort |
 | CRC-16/CCITT | `src/sdo.rs` | check value `0x31C3`, incremental == one-shot |
@@ -515,10 +540,12 @@ must satisfy `TryFrom<(Index, &[u8])>` (deserialize) and `IntoBuf` (serialize); 
 
 ### 11.3 Port to a different CAN driver
 
-Write an adapter: `CanFrame` → controller frame (use `CobId → u32` + `data` +
-`len`), and controller frame → `CanFrame` (decode the 11-bit identifier with
-`CobId::from(u32)`). The library is fully driver-agnostic; only the application
-layer touches hardware. Keep the 13-byte slice format for tests/simulation.
+Write an adapter: `F: CanFrame` → controller frame (use `cobid() → u32` + `data()` +
+`len()`), and controller frame → `F` (decode the 11-bit identifier with
+`CobId::from(u32)`, build with `F::from_parts`). The library is fully
+driver-agnostic; only the application layer touches hardware. Pick `CanFrame16` for
+SocketCAN-style buffers or `CanFrame13` for compact Ethernet-adapter buffers; the
+slice formats are per-format (see `docs/FORMAT.md`).
 
 ### 11.4 Known deviations from CiA 301 (deliberate)
 
@@ -533,7 +560,7 @@ layer touches hardware. Keep the 13-byte slice format for tests/simulation.
 
 ## 12. Reference checklist for agents
 
-- Wire payloads are 8 bytes; frame `len` is informational (`CanFrame`).
+- Wire payloads are 8 bytes; frame `len` is informational (per `CanFrame` impl).
 - **Segment frames are decoded by machine state only** — never add them to a
   stateless `TryFrom` dispatch.
 - Block CRC covers the actual data; the final segment's padding (`n`) is excluded

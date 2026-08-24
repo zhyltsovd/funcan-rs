@@ -123,13 +123,57 @@ impl From<u32> for CobId {
     }
 }
 
-/// A structure representing RAW CAN frames.
+/// A CAN frame in a device-specific wire format.
 ///
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct CanFrame {
+/// The library is parametric over the concrete frame type so that the same
+/// protocol logic can run on top of different CAN hardware gateways:
+///
+/// * [`CanFrame16`] — the 16-byte SocketCAN-style layout (COB-ID first,
+///   little-endian, 3 padding bytes) used by CAN sockets, e.g. USB-CANABLE
+///   devices.
+/// * [`CanFrame13`] — the compact 13-byte layout (length first, COB-ID
+///   big-endian) used by Ethernet-to-CAN adapters.
+///
+/// The required device type is known per use case at compile time.
+pub trait CanFrame: Clone + Copy + PartialEq + Eq + fmt::Debug + Default {
+    /// Size in bytes of the serialized frame on the wire.
+    const WIRE_SIZE: usize;
+
+    /// Constructs a frame from its semantic parts.
+    fn from_parts(cobid: CobId, len: usize, data: [u8; 8]) -> Self;
+
     /// The CAN identifier (COB-ID) of the frame.
+    fn cobid(&self) -> CobId;
+
+    /// The number of valid bytes in [`Self::data`].
+    fn len(&self) -> usize;
+
+    /// The 8-byte payload of the frame.
+    fn data(&self) -> [u8; 8];
+
+    /// Serializes the frame into its wire format.
     ///
-    /// CAN identifier of the frame in the CAN network.
+    /// # Panics
+    ///
+    /// Panics if the provided buffer is shorter than [`Self::WIRE_SIZE`] bytes.
+    fn write_to_slice(&self, buffer: &mut [u8]);
+
+    /// Deserializes a frame from its wire format.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided buffer is shorter than [`Self::WIRE_SIZE`] bytes.
+    fn read_from_slice(buffer: &[u8]) -> Self;
+}
+
+/// 16-byte CAN frame in the SocketCAN-style layout.
+///
+/// Wire format (16 bytes): `[cobid LE 4][len 1][padding 3][data 8]`, matching
+/// the Linux SocketCAN `struct can_frame` (`can_id` u32 | `can_dlc` u8 |
+/// `__pad`[3] | `data`[8]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CanFrame16 {
+    /// The CAN identifier (COB-ID) of the frame.
     pub cobid: CobId,
 
     /// The length of the CAN frame
@@ -141,21 +185,108 @@ pub struct CanFrame {
     pub data: [u8; 8],
 }
 
-impl fmt::Debug for CanFrame {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: [", self.cobid)?;
-        for i in 0..self.len {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{:02X}", self.data[i])?;
-        }
+/// 13-byte compact CAN frame as used by Ethernet-to-CAN adapters.
+///
+/// Wire format (13 bytes): `[len 1][cobid BE 4][data 8]`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CanFrame13 {
+    /// The CAN identifier (COB-ID) of the frame.
+    pub cobid: CobId,
 
-        write!(f, "]")
+    /// The length of the CAN frame
+    pub len: usize,
+
+    /// The data of the CAN frame.
+    ///
+    /// This is an array of 8 bytes containing the payload of the frame.
+    pub data: [u8; 8],
+}
+
+fn debug_frame(cobid: CobId, len: usize, data: [u8; 8], fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(fmt, "{:?}: [", cobid)?;
+    for i in 0..len {
+        if i > 0 {
+            write!(fmt, ", ")?;
+        }
+        write!(fmt, "{:02X}", data[i])?;
+    }
+
+    write!(fmt, "]")
+}
+
+impl fmt::Debug for CanFrame16 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        debug_frame(self.cobid, self.len, self.data, f)
     }
 }
 
-impl Default for CanFrame {
+impl fmt::Debug for CanFrame13 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        debug_frame(self.cobid, self.len, self.data, f)
+    }
+}
+
+impl CanFrame for CanFrame16 {
+    const WIRE_SIZE: usize = 16;
+
+    fn from_parts(cobid: CobId, len: usize, data: [u8; 8]) -> Self {
+        Self { cobid, len, data }
+    }
+
+    fn cobid(&self) -> CobId {
+        self.cobid
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn data(&self) -> [u8; 8] {
+        self.data
+    }
+
+    fn write_to_slice(&self, buffer: &mut [u8]) {
+        assert!(
+            buffer.len() >= Self::WIRE_SIZE,
+            "Buffer must be at least {} bytes long",
+            Self::WIRE_SIZE
+        );
+
+        // Write COB-ID as little endian
+        let cobid: u32 = self.cobid.into();
+        buffer[0..4].copy_from_slice(&cobid.to_le_bytes());
+
+        // Write length
+        buffer[4] = self.len as u8;
+
+        // Fill 3 bytes with zero (padding)
+        buffer[5..8].fill(0);
+
+        // Write CAN data
+        buffer[8..16].copy_from_slice(&self.data);
+    }
+
+    fn read_from_slice(buffer: &[u8]) -> Self {
+        assert!(
+            buffer.len() >= Self::WIRE_SIZE,
+            "Buffer must be at least {} bytes long",
+            Self::WIRE_SIZE
+        );
+
+        // Read COB-ID from little endian bytes
+        let cobid = u32::from_le_bytes(buffer[0..4].try_into().unwrap()).into();
+
+        // Read length
+        let len = buffer[4] as usize;
+
+        // Read CAN data
+        let data = buffer[8..16].try_into().unwrap();
+
+        CanFrame16 { cobid, len, data }
+    }
+}
+
+impl Default for CanFrame16 {
     fn default() -> Self {
         Self {
             cobid: CobId::ManufacturerSpecific(0xffff),
@@ -165,16 +296,33 @@ impl Default for CanFrame {
     }
 }
 
-impl CanFrame {
-    /// Serializes the CAN frame into a byte slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the provided buffer is less than 16 bytes long.
-    pub fn write_to_slice(self: &Self, buffer: &mut [u8]) {
-        assert!(buffer.len() >= 13, "Buffer must be at least 13 bytes long");
+impl CanFrame for CanFrame13 {
+    const WIRE_SIZE: usize = 13;
 
-        // Write COB-ID as little endian
+    fn from_parts(cobid: CobId, len: usize, data: [u8; 8]) -> Self {
+        Self { cobid, len, data }
+    }
+
+    fn cobid(&self) -> CobId {
+        self.cobid
+    }
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn data(&self) -> [u8; 8] {
+        self.data
+    }
+
+    fn write_to_slice(&self, buffer: &mut [u8]) {
+        assert!(
+            buffer.len() >= Self::WIRE_SIZE,
+            "Buffer must be at least {} bytes long",
+            Self::WIRE_SIZE
+        );
+
+        // Write COB-ID as big endian
         let cobid: u32 = self.cobid.into();
         buffer[1..5].copy_from_slice(&cobid.to_be_bytes());
 
@@ -185,19 +333,14 @@ impl CanFrame {
         buffer[5..13].copy_from_slice(&self.data);
     }
 
-    /// Deserializes a `CanFrame` from a byte slice.
-    ///
-    /// # Arguments
-    ///
-    /// * `buffer` - A byte slice containing the serialized CAN frame. Must be at least 16 bytes long.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the provided buffer is less than 16 bytes long.
-    pub fn read_from_slice(buffer: &[u8]) -> Self {
-        assert!(buffer.len() >= 13, "Buffer must be at least 13 bytes long");
+    fn read_from_slice(buffer: &[u8]) -> Self {
+        assert!(
+            buffer.len() >= Self::WIRE_SIZE,
+            "Buffer must be at least {} bytes long",
+            Self::WIRE_SIZE
+        );
 
-        // Read COB-ID from little endian bytes
+        // Read COB-ID from big endian bytes
         let cobid = u32::from_be_bytes(buffer[1..5].try_into().unwrap()).into();
 
         // Read length
@@ -206,7 +349,17 @@ impl CanFrame {
         // Read CAN data
         let data = buffer[5..13].try_into().unwrap();
 
-        CanFrame { cobid, len, data }
+        CanFrame13 { cobid, len, data }
+    }
+}
+
+impl Default for CanFrame13 {
+    fn default() -> Self {
+        Self {
+            cobid: CobId::ManufacturerSpecific(0xffff),
+            len: 0,
+            data: [0; 8],
+        }
     }
 }
 
@@ -214,19 +367,61 @@ impl CanFrame {
 mod tests {
     use super::*;
 
+    const SDO_REQUEST: [u8; 8] = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11];
+
     #[test]
-    fn test_serialization_deserialization() {
-        let frame = CanFrame {
+    fn test_serialization_deserialization_13() {
+        let frame = CanFrame13 {
             cobid: CobId::SdoRequest(2),
             len: 8,
-            data: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11],
+            data: SDO_REQUEST,
         };
 
         let mut buffer = [0u8; 13];
         frame.write_to_slice(&mut buffer);
 
-        let deserialized_frame = CanFrame::read_from_slice(&buffer);
+        // len first, COB-ID big-endian (0x602)
+        let expected: [u8; 13] = [8, 0x00, 0x00, 0x06, 0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11];
+        assert_eq!(buffer, expected);
 
+        let deserialized_frame = CanFrame13::read_from_slice(&buffer);
         assert_eq!(frame, deserialized_frame);
+    }
+
+    #[test]
+    fn test_serialization_deserialization_16() {
+        let frame = CanFrame16 {
+            cobid: CobId::SdoRequest(2),
+            len: 8,
+            data: SDO_REQUEST,
+        };
+
+        let mut buffer = [0u8; 16];
+        frame.write_to_slice(&mut buffer);
+
+        // COB-ID first, little-endian (0x602), 3 padding bytes
+        let expected: [u8; 16] = [
+            0x02, 0x06, 0x00, 0x00, 8, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
+        ];
+        assert_eq!(buffer, expected);
+
+        let deserialized_frame = CanFrame16::read_from_slice(&buffer);
+        assert_eq!(frame, deserialized_frame);
+    }
+
+    #[test]
+    fn test_trait_generic_round_trip() {
+        // the same logical frame must round-trip through the generic trait
+        // for both concrete formats
+        fn round_trip<F: CanFrame>() {
+            let frame = F::from_parts(CobId::Heartbeat(5), 1, [0x05, 0, 0, 0, 0, 0, 0, 0]);
+            let mut buffer = [0u8; 64];
+            frame.write_to_slice(&mut buffer);
+            let read = F::read_from_slice(&buffer[..F::WIRE_SIZE]);
+            assert_eq!(frame, read);
+        }
+
+        round_trip::<CanFrame13>();
+        round_trip::<CanFrame16>();
     }
 }

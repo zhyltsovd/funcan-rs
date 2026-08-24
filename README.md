@@ -19,7 +19,10 @@ support is partial.
 
 ## Quick look
 
-- `src/raw.rs` — `CanFrame` / `CobId` (CiA 301 function-code mapping).
+- `src/raw.rs` — the `CanFrame` trait (parametric over the wire format) with two
+  implementations: `CanFrame16` (16-byte SocketCAN-style, for CAN sockets /
+  USB-CANABLE) and `CanFrame13` (13-byte compact, for Ethernet-to-CAN adapters);
+  plus `CobId` (CiA 301 function-code mapping).
 - `src/dictionary.rs` — `CanIndex`, `Dictionary`, `DictionaryValue` (trait-based
   object dictionary; no concrete OD is provided).
 - `src/sdo/` — SDO codecs (`sdo.rs`), state machines (`sdo/machines.rs`), and the
@@ -28,8 +31,10 @@ support is partial.
   `src/interfaces.rs` — NMT codec, heartbeat consumer, PDO producer/consumer, the
   `MealyMachine` trait, and driver-facing interface traits.
 
-No CAN hardware driver is included: applications feed raw `CanFrame`s in and send
-the frames the machines produce. See `docs/LIBRARY.md` §8 for usage patterns.
+No CAN hardware driver is included: applications pick the frame format per device
+(`CanFrame16` or `CanFrame13`) and feed raw frames in, sending the frames the
+machines produce. See `docs/LIBRARY.md` §8 for usage patterns and
+`docs/FORMAT.md` for the frame-format design.
 
 ## Contributing
 
@@ -49,7 +54,7 @@ zhyltsovd@gmail.com.
 
 - [x] Base
   - [x] State machine trait (`MealyMachine`)
-  - [x] Raw CAN frames (`CanFrame`, `CobId`)
+  - [x] Raw CAN frames (`CanFrame` trait + `CanFrame16` / `CanFrame13`)
 - Core CANopen functionalities
   - [x] SDO client and server
     - [x] Expedited transfers
