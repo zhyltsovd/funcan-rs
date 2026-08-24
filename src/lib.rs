@@ -2,6 +2,9 @@
 //! # funcan-rs
 //!
 
+#[cfg(test)]
+extern crate std;
+
 pub mod dictionary;
 pub mod heartbeat;
 pub mod interfaces;

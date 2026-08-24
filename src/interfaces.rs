@@ -54,4 +54,12 @@ impl IntoBuf for u8 {
     }
 }
 
+impl<const K: usize> IntoBuf for [u8; K] {
+    fn into_buf<'a>(self: &'a Self, buf: &'a mut [u8]) -> usize {
+        assert!(buf.len() >= K);
+        buf[..K].copy_from_slice(self);
+        K
+    }
+}
+
 

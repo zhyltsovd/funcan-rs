@@ -2,7 +2,6 @@ use core::marker::PhantomData;
 
 use crate::dictionary::*;
 use crate::interfaces::*;
-use crate::machine::*;
 use crate::raw::*;
 use crate::sdo::machines::*;
 use crate::sdo::*;
@@ -16,6 +15,12 @@ pub struct SdoClient<const N: usize, R, W, D> {
 pub enum SdoInput<R, W, D: Dictionary> {
     Read(D::Index, R),
     Write(D::Index, D::Object, W),
+    /// Block upload (CiA 301 7.2.4.8): read the object using the block
+    /// transfer protocol.
+    BlockRead(D::Index, R),
+    /// Block download (CiA 301 7.2.4.7): write the object using the block
+    /// transfer protocol.
+    BlockWrite(D::Index, D::Object, W),
     Frame(CanFrame)
 }
 
@@ -28,6 +33,8 @@ where
 //            SdoInput::Reset => write!(f, "Сброс"),
             SdoInput::Read(ix, _) => write!(f, "Чтение объекта {:?}", ix),
             SdoInput::Write(ix, _, _) => write!(f, "Запись объекта {:?}", ix),
+            SdoInput::BlockRead(ix, _) => write!(f, "Блочное чтение объекта {:?}", ix),
+            SdoInput::BlockWrite(ix, _, _) => write!(f, "Блочная запись объекта {:?}", ix),
             SdoInput::Frame(_) => write!(f, "Обработчка SDO фрейма"),
         } 
     }
@@ -75,23 +82,40 @@ where
                 }
             }
 
+            BlockRead(ix, r) => {
+                if self.sdo.is_ready() {
+                    self.sdo.read_block(ix.into(), r)
+                } else {
+                    Error(SdoError::Busy)
+                }
+            }
+
+            BlockWrite(ix, x, r) => {
+                if self.sdo.is_ready() {
+                    self.sdo.write_block(ix.into(), x, r)
+                } else {
+                    Error(SdoError::Busy)
+                }
+            }
+
             Frame(frame) => {
-                match ServerResponse::try_from(frame.data) {
+                let result = self.sdo.transit_frame(frame.data);
 
-                    Ok(response) => {
-                        let result = self.sdo.transit(response);
-
-                        if let Done(r) = result {
-                            self.handle_sdo_result(r)
-                        } else {
-                            result
-                        }
-                    }
-
-                    Err(err) => Error(SdoError::DecodingFailure(err))
+                if let Done(r) = result {
+                    self.handle_sdo_result(r)
+                } else {
+                    result
                 }
             }
         }
+    }
+
+    /// Emits the next pending segment of the active block download sub-block,
+    /// if any. Returns `None` when the sub-block has been fully transmitted
+    /// (the machine is then waiting for the server's block response) or when
+    /// no block download is in progress.
+    pub fn pump(self: &mut Self) -> Option<ClientRequest> {
+        self.sdo.pump_block()
     }
 
     
