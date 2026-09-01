@@ -722,6 +722,189 @@ fn mixed_script_consecutive_transfers() {
 }
 
 //---------------------------------------------------------------------------------------------------
+// Short sequences of single SDO transfers
+//---------------------------------------------------------------------------------------------------
+
+/// One complete single transfer: expedited or multi-segment, segmented or
+/// block, read or write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum XferKind {
+    SegReadSmall,     // expedited u32 upload
+    SegReadLarge,     // multi-segment upload, 10 bytes
+    SegWriteSmall,    // expedited u16 download
+    SegWriteLarge,    // multi-segment download, 10 bytes
+    BlockReadSmall,   // block upload, 3 bytes
+    BlockReadLarge,   // block upload, 64 bytes (multi-block, exact buffer fit)
+    BlockWriteSmall,  // block download, 3 bytes
+    BlockWriteLarge,  // block download, 64 bytes (multi-block, exact buffer fit)
+}
+
+const ALL_KINDS: [XferKind; 8] = [
+    XferKind::SegReadSmall,
+    XferKind::SegReadLarge,
+    XferKind::SegWriteSmall,
+    XferKind::SegWriteLarge,
+    XferKind::BlockReadSmall,
+    XferKind::BlockReadLarge,
+    XferKind::BlockWriteSmall,
+    XferKind::BlockWriteLarge,
+];
+
+impl XferKind {
+    fn size(self) -> usize {
+        match self {
+            XferKind::SegReadSmall => 4,
+            XferKind::SegReadLarge | XferKind::SegWriteLarge => 10,
+            XferKind::SegWriteSmall => 2,
+            XferKind::BlockReadSmall | XferKind::BlockWriteSmall => 3,
+            XferKind::BlockReadLarge | XferKind::BlockWriteLarge => 64,
+        }
+    }
+
+    /// Deterministic payload: distinct per kind and per position in a
+    /// sequence, so stale buffer data would be caught.
+    fn payload(self, seq: u32) -> Vec<u8> {
+        let n = self.size();
+        (0..n)
+            .map(|i| ((i as u32).wrapping_mul(31).wrapping_add(seq.wrapping_mul(7)) + self as u32 * 13) as u8)
+            .collect()
+    }
+}
+
+/// Runs one complete transfer of the given kind on a machine pair and
+/// verifies the payload integrity.
+fn run_single<const N: usize>(
+    kind: XferKind,
+    client: &mut ClientMachine<N, (), ()>,
+    server: &mut ServerMachine<N>,
+    index: CanIndex,
+    seq: u32,
+) {
+    let payload = kind.payload(seq);
+    match kind {
+        XferKind::SegReadSmall | XferKind::SegReadLarge => {
+            let received = drive_upload(client, server, index, &SliceBuf(&payload));
+            assert_eq!(received, payload, "kind {:?} seq {}", kind, seq);
+        }
+        XferKind::SegWriteSmall | XferKind::SegWriteLarge => {
+            let received = drive_download(client, server, index, SliceBuf(&payload));
+            assert_eq!(received, payload, "kind {:?} seq {}", kind, seq);
+        }
+        XferKind::BlockReadSmall | XferKind::BlockReadLarge => {
+            let init = client.read_block(index, ());
+            let received = drive_block_upload(client, server, index, &SliceBuf(&payload), init);
+            assert_eq!(received, payload, "kind {:?} seq {}", kind, seq);
+        }
+        XferKind::BlockWriteSmall | XferKind::BlockWriteLarge => {
+            let init = client.write_block(index, SliceBuf(&payload), ());
+            let received = drive_block_download(client, server, index, init);
+            assert_eq!(received, payload, "kind {:?} seq {}", kind, seq);
+        }
+    }
+    assert!(client.is_ready(), "client not ready after {:?}", kind);
+    assert!(server.is_ready(), "server not ready after {:?}", kind);
+}
+
+#[test]
+fn short_sequences_pairwise_matrix() {
+    // Every ordered pair of transfer kinds on the same machine pair, with
+    // distinct indexes and payloads: catches leftover state between any two
+    // transfer types.
+    for a in ALL_KINDS {
+        for b in ALL_KINDS {
+            let mut client: ClientMachine<64, (), ()> = ClientMachine::default();
+            let mut server: ServerMachine<64> = ServerMachine::default();
+            run_single(a, &mut client, &mut server, CanIndex::new(0x1000, 0x01), 1);
+            run_single(b, &mut client, &mut server, CanIndex::new(0x2000, 0x02), 2);
+        }
+    }
+}
+
+#[test]
+fn short_sequences_triple_matrix() {
+    // Every ordered triple of the four basic kinds: catches state that
+    // survives two transfers and breaks the third.
+    const BASIC: [XferKind; 4] = [
+        XferKind::SegReadSmall,
+        XferKind::SegWriteSmall,
+        XferKind::BlockReadSmall,
+        XferKind::BlockWriteSmall,
+    ];
+    let mut seq = 0u32;
+    for a in BASIC {
+        for b in BASIC {
+            for c in BASIC {
+                let mut client: ClientMachine<64, (), ()> = ClientMachine::default();
+                let mut server: ServerMachine<64> = ServerMachine::default();
+                seq += 1;
+                run_single(a, &mut client, &mut server, CanIndex::new(0x1000, 0x01), seq);
+                seq += 1;
+                run_single(b, &mut client, &mut server, CanIndex::new(0x2000, 0x02), seq);
+                seq += 1;
+                run_single(c, &mut client, &mut server, CanIndex::new(0x3000, 0x03), seq);
+            }
+        }
+    }
+}
+
+#[test]
+fn expedited_burst_reads_writes() {
+    // A realistic polling pattern: many single-frame (expedited) transfers
+    // back to back on the same machine pair.
+    let mut client: ClientMachine<64, (), ()> = ClientMachine::default();
+    let mut server: ServerMachine<64> = ServerMachine::default();
+    let index = CanIndex::new(0x6068, 1);
+
+    for i in 0..64u32 {
+        if i % 2 == 0 {
+            let v = 0x1000 + i;
+            let received = drive_upload(&mut client, &mut server, index, &v);
+            assert_eq!(received, v.to_le_bytes().to_vec(), "burst read {}", i);
+        } else {
+            let v = 0x2000 + i;
+            let received = drive_download(&mut client, &mut server, index, v);
+            assert_eq!(received, v.to_le_bytes().to_vec(), "burst write {}", i);
+        }
+    }
+    assert!(client.is_ready());
+    assert!(server.is_ready());
+}
+
+#[test]
+fn segmented_upload_sizes_sweep() {
+    // Every segmented upload size alone on a fresh machine pair: the
+    // server-side multi-segment upload was one of the most broken paths.
+    for size in 1..=24usize {
+        let mut client: ClientMachine<64, (), ()> = ClientMachine::default();
+        let mut server: ServerMachine<64> = ServerMachine::default();
+        let index = CanIndex::new(0x6068, 1);
+        let payload: Vec<u8> = (0..size).map(|i| (i as u8).wrapping_mul(23).wrapping_add(1)).collect();
+        let received = drive_upload(&mut client, &mut server, index, &SliceBuf(&payload));
+        assert_eq!(received, payload, "upload size {}", size);
+    }
+}
+
+#[test]
+fn facade_expedited_burst() {
+    // End-to-end polling pattern through the facades.
+    let mut h: FacadeHarness<64> = FacadeHarness::new();
+    for i in 0..20u32 {
+        let wcap = Cap::new();
+        let out = h.client.input(SdoInput::Write(TIndex::Speed, TObject::Speed(1000 + i), wcap.clone()));
+        let out = h.drive(out);
+        assert!(matches!(out, ClientOutput::TransferCompleted), "write {}: {:?}", i, out);
+        assert_eq!(wcap.get(), Some(()));
+        assert_eq!(h.server.dictionary.speed, 1000 + i);
+
+        let rcap = Cap::new();
+        let out = h.client.input(SdoInput::Read(TIndex::Speed, rcap.clone()));
+        let out = h.drive(out);
+        assert!(matches!(out, ClientOutput::TransferCompleted), "read {}: {:?}", i, out);
+        assert_eq!(rcap.get(), Some(TObject::Speed(1000 + i)));
+    }
+}
+
+//---------------------------------------------------------------------------------------------------
 // Error paths and recovery (the machine must return to Idle after any error)
 //---------------------------------------------------------------------------------------------------
 

@@ -496,7 +496,7 @@ and are not controller formats.
 
 ```sh
 cargo check          # clean; only pre-existing warnings (raw.rs unused d0/d1, pdo.rs unused Results)
-cargo test           # 78 tests, all pass
+cargo test           # 83 tests, all pass
 cargo test --lib     # same suite (lib tests)
 ```
 
@@ -512,7 +512,7 @@ cargo test --lib     # same suite (lib tests)
 | SDO block codecs | `src/sdo.rs` | initiate/ack/response/end/segment encodings, ambiguity proof, server abort round-trip |
 | SDO segmented machines | `src/sdo/machines.rs` | client↔server upload/download of u32/u16 ("gasoline" loops) |
 | SDO block machines | `src/sdo/machines.rs` | single/multi-block download+upload exchanges, retransmission both directions, CRC mismatch aborts, raw `transit_frame` decoding |
-| SDO audit suite (multi-segment, consecutive, recovery) | `src/sdo/transfer_tests.rs` | multi-segment upload/download sweeps, consecutive transfers (segmented, block, mixed scripts), block-size sweeps, empty block upload, error recovery after abort/toggle/index/oversize/ackseq errors, malformed-peer buffer guards, abort codec round-trips, facade end-to-end transfers over `CanFrame13` with a test dictionary and responders |
+| SDO audit suite (multi-segment, consecutive, recovery) | `src/sdo/transfer_tests.rs` | multi-segment upload/download sweeps, consecutive transfers (segmented, block, mixed scripts), **short-sequence matrices (all ordered pairs of 8 transfer kinds, all ordered triples of the 4 basic kinds, expedited read/write bursts)**, block-size sweeps, empty block upload, error recovery after abort/toggle/index/oversize/ackseq errors, malformed-peer buffer guards, abort codec round-trips, facade end-to-end transfers over `CanFrame13` with a test dictionary and responders |
 
 **Safety:** **zero `unsafe` blocks** in the crate — no FFI, no MMIO, no critical
 sections, platform-independent. Panics are used for API misuse (buffer-length
