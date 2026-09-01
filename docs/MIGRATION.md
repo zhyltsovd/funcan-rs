@@ -218,6 +218,7 @@ documents the new flow.
 | Error | Cause | Fix |
 |---|---|---|
 | E0107 "wrong number of generic arguments" | `SdoClient`/`SdoServer`/`Producer` missing the frame parameter | add `CanFrame13` (or `CanFrame16`) as the first type argument |
+| E0004 "non-exhaustive patterns: `ClientOutput::FinalOutput(_, _)` not covered" | exhaustive match on `ClientOutput` written for ≤0.3.0 | add the `FinalOutput(req, result)` arm — send the frame, then handle the result like `Done` (see §6.1); or use a catch-all `_ => …` |
 | E0412/E0433 "`CanFrame` is not a struct" | code still refers to the old struct | use `CanFrame13` / `CanFrame16` |
 | E0599 "no method `data`" / E0609 "no field `data`" | field access on a frame | use methods: `frame.data()`, `frame.cobid()`, `frame.len()` |
 | E0282 "type annotations needed" | `SdoInput::Frame(...)` with an unannotated frame | annotate the variable or the generic argument |
