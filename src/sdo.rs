@@ -3,6 +3,9 @@ pub mod client;
 pub mod machines;
 pub mod server;
 
+#[cfg(test)]
+mod transfer_tests;
+
 use core::ops::Not;
 
 use crate::dictionary::*;
@@ -557,7 +560,7 @@ impl Into<[u8; 8]> for ServerResponse {
             }
 
             ServerResponse::Abort(ix, code) => {
-                let cs: u8 = ServerCommandSpecifier::DownloadSegmentAck.into();
+                let cs: u8 = ServerCommandSpecifier::Abort.into();
                 let code_u32: u32 = code.into();
                 
                 req[0] = cs;

@@ -159,6 +159,10 @@ pub enum ClientResult<const N: usize, RR, RW> {
 pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),
     Done(ClientResult<N, RR, RW>),
+    /// The machine produced a final frame (the block upload end
+    /// acknowledgement) together with the transfer result. The caller must
+    /// transmit the frame, then handle the result exactly like `Done`.
+    FinalOutput(ClientRequest, ClientResult<N, RR, RW>),
     TransferCompleted,
     Error(SdoError),
     /// The machine processed an input but has nothing to send. Used by block
@@ -266,6 +270,17 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         Done(res)
     }
 
+    /// Produces an error output and returns the machine to Idle, releasing
+    /// any pending responder. An SDO transfer is single-shot: after any
+    /// protocol error the transfer is dead, so the machine must be reusable
+    /// for the next transfer without a manual reset.
+    fn error(self: &mut Self, e: SdoError) -> ClientOutput<N, RR, RW> {
+        self.state = ClientState::Idle;
+        self.read_responder = None;
+        self.write_responder = None;
+        ClientOutput::Error(e)
+    }
+
     fn complete_downloading(self: &mut Self) -> ClientOutput<N, RR, RW> {
         use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::machines::ClientResult::*;
@@ -286,8 +301,9 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
         let ix1 = (ix0 + 7).min(len);
         let end = self.data_index + 7 >= len;
 
-        data.copy_from_slice(&self.data[ix0..ix1]);
-        Output(DownloadSegment(t, end, 7, data))
+        data[..ix1 - ix0].copy_from_slice(&self.data[ix0..ix1]);
+        let valid = (ix1 - ix0) as u8;
+        Output(DownloadSegment(t, end, valid, data))
     }
 
     //-----------------------------------------------------------------------
@@ -348,16 +364,22 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
     /// indistinguishable from segmented frames for a stateless decoder; the
     /// machine resolves them using its current state.
     pub fn transit_frame(self: &mut Self, data: [u8; 8]) -> ClientOutput<N, RR, RW> {
-        use crate::sdo::machines::ClientOutput::*;
-
         match self.state {
-            ClientState::BlockUploadReceiving { .. } => {
+            ClientState::BlockUploadReceiving {
+                position, seqno, ..
+            } => {
                 if data[0] == 0x80 {
                     // abort from the server
                     match ServerResponse::try_from(data) {
                         Ok(response) => self.transit(response),
-                        Err(err) => Error(SdoError::DecodingFailure(err)),
+                        Err(err) => self.error(SdoError::DecodingFailure(err)),
                     }
+                } else if position == 0 && seqno == 0 && (data[0] & 0xE3) == 0xC1 {
+                    // the end frame of an empty transfer: no segments were
+                    // sent, the server skipped straight to the end frame
+                    let no_data = (data[0] >> 2) & 0x07;
+                    let crc = u16::from_le_bytes([data[1], data[2]]);
+                    self.transit(ServerResponse::BlockUploadEnd(no_data, crc))
                 } else {
                     let seqno = data[0] & 0x7F;
                     let end = data[0] & 0x80 != 0;
@@ -370,14 +392,14 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
                 if data[0] == 0x80 {
                     match ServerResponse::try_from(data) {
                         Ok(response) => self.transit(response),
-                        Err(err) => Error(SdoError::DecodingFailure(err)),
+                        Err(err) => self.error(SdoError::DecodingFailure(err)),
                     }
                 } else if (data[0] & 0xE3) == 0xC1 {
                     let no_data = (data[0] >> 2) & 0x07;
                     let crc = u16::from_le_bytes([data[1], data[2]]);
                     self.transit(ServerResponse::BlockUploadEnd(no_data, crc))
                 } else {
-                    Error(SdoError::DecodingFailure(
+                    self.error(SdoError::DecodingFailure(
                         SdoDecodingError::UnknownServerCommandSpecifier(data[0] >> 5),
                     ))
                 }
@@ -385,7 +407,7 @@ impl<const N: usize, RR, RW> ClientMachine<N, RR, RW> {
 
             _ => match ServerResponse::try_from(data) {
                 Ok(response) => self.transit(response),
-                Err(err) => Error(SdoError::DecodingFailure(err)),
+                Err(err) => self.error(SdoError::DecodingFailure(err)),
             },
         }
     }
@@ -481,12 +503,12 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 
             (UploadingMultiples(toggle), UploadMultiples(res_toggle, end, len, data)) => {
                 if res_toggle != *toggle {
-                    Error(SdoError::ToggleMismatch)
+                    self.error(SdoError::ToggleMismatch)
                 } else {
                     let idx = self.data_index;
                     let data_len = len as usize;
                     if idx + data_len > self.data.len() {
-                        Error(SdoError::BufferOverflow)
+                        self.error(SdoError::BufferOverflow)
                     } else {
                         self.data[idx..idx + data_len].copy_from_slice(&data[0..data_len]);
                         self.data_index = idx + data_len;
@@ -596,7 +618,7 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                     } else {
                         match self.next_download_segment() {
                             Some(req) => Output(req),
-                            None => Error(SdoError::Busy), // should not happen
+                            None => self.error(SdoError::Busy), // should not happen
                         }
                     }
                 }
@@ -662,6 +684,9 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                         seqno_in,
                         self.upload_ack_blksize(position),
                     ))
+                } else if position + 7 > self.data.len() {
+                    // the peer sent more data than the buffer can hold
+                    self.error(SdoError::BufferOverflow)
                 } else {
                     self.data[position..position + 7].copy_from_slice(&data);
                     let new_position = position + 7;
@@ -686,6 +711,48 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                 }
             }
 
+            (BlockUploadReceiving { position, .. }, BlockUploadEnd(no_data, crc)) => {
+                // The end frame of an empty transfer: the server skipped
+                // straight to it because no segments had to be sent.
+                let position = *position;
+                if no_data != 7 || position != 0 {
+                    self.error(SdoError::ClientStateResponseMismatch(
+                        ClientState::BlockUploadReceiving {
+                            blocksize: 0,
+                            position,
+                            seqno: 0,
+                        },
+                        ServerResponse::BlockUploadEnd(no_data, crc),
+                    ))
+                } else {
+                    let total = position;
+                    // verify the size indicated by the server, if any
+                    let size = self.block_upload_size as usize;
+                    if size != 0 && total != size {
+                        let code = if total > size {
+                            AbortCode::DataTypeDoesNotMatchLengthOfServiceParameterTooHigh
+                        } else {
+                            AbortCode::DataTypeDoesNotMatchLengthOfServiceParameterTooLow
+                        };
+                        self.error(SdoError::TransferAborted(self.current_index, code))
+                    } else if self.block_upload_crc
+                        && crc16_ccitt(&self.data[..total], 0) != crc
+                    {
+                        self.error(SdoError::TransferAborted(
+                            self.current_index,
+                            AbortCode::CrcError,
+                        ))
+                    } else {
+                        use crate::sdo::machines::ClientResult::*;
+                        self.data_index = total;
+                        self.state = Idle;
+                        let resp = core::mem::replace(&mut self.read_responder, None);
+                        let res = UploadCompleted(self.current_index, self.data, total, resp);
+                        FinalOutput(BlockUploadEndAck, res)
+                    }
+                }
+            }
+
             (BlockUploadAwaitingEnd { position }, BlockUploadEnd(no_data, crc)) => {
                 let position = *position;
                 let count = 7 - no_data as usize;
@@ -700,24 +767,31 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
                     } else {
                         AbortCode::DataTypeDoesNotMatchLengthOfServiceParameterTooLow
                     };
-                    self.state = Idle;
-                    Error(SdoError::TransferAborted(self.current_index, code))
+                    self.error(SdoError::TransferAborted(self.current_index, code))
                 } else if self.block_upload_crc && crc16_ccitt(&self.data[..total], 0) != crc {
-                    self.state = Idle;
-                    Error(SdoError::TransferAborted(self.current_index, AbortCode::CrcError))
+                    self.error(SdoError::TransferAborted(
+                        self.current_index,
+                        AbortCode::CrcError,
+                    ))
                 } else {
+                    use crate::sdo::machines::ClientResult::*;
                     self.data_index = total;
                     self.state = Idle;
-                    self.output_data()
+                    let resp = core::mem::replace(&mut self.read_responder, None);
+                    let res = UploadCompleted(self.current_index, self.data, total, resp);
+                    // The client must acknowledge the end frame (CiA 301
+                    // 7.2.4.3.12); the acknowledgement and the result travel
+                    // together so the caller can send the frame first.
+                    FinalOutput(BlockUploadEndAck, res)
                 }
             }
 
             (_, Abort(ix, code)) => {
-                Error(SdoError::TransferAborted(ix, code))
+                self.error(SdoError::TransferAborted(ix, code))
             }
             
             // Default: Unexpected response
-            (state, response) => Error(SdoError::ClientStateResponseMismatch(state.clone(), response)),
+            (state, response) => self.error(SdoError::ClientStateResponseMismatch(state.clone(), response)),
         }
     }
 }
@@ -726,7 +800,9 @@ impl<const N: usize, RR, RW> MealyMachine<ServerResponse, ClientOutput<N, RR, RW
 #[derive(Debug, Clone, Copy)]
 pub enum ServerState {
     Idle,
-    AwaitingData(bool),
+    /// A segmented upload initiate was received; the application must provide
+    /// the data to upload via `upload_data`.
+    AwaitingData,
     //    UploadingSingleSegment,
     UploadingMultipleSegments {
         response_toggle: ToggleBit,
@@ -800,6 +876,20 @@ fn server_block_size<const N: usize>(position: usize) -> u8 {
 }
 
 impl<const N: usize> ServerMachine<N> {
+    pub fn is_ready(self: &Self) -> bool {
+        match self.state {
+            ServerState::Idle => true,
+            _ => false,
+        }
+    }
+
+    /// Produces an error output and returns the machine to Idle, so that the
+    /// next transfer can start without a manual reset.
+    fn error(self: &mut Self, e: SdoError) -> ServerOutput<N> {
+        self.state = ServerState::Idle;
+        ServerOutput::Error(e)
+    }
+
     fn continue_uploading(
         self: &mut Self,
         response_toggle: ToggleBit,
@@ -815,9 +905,11 @@ impl<const N: usize> ServerMachine<N> {
             self.state = ServerState::Idle;
             ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
         } else {
+            // the state tracks the *next* segment to send: the opposite
+            // toggle and the offset after the current segment
             self.state = ServerState::UploadingMultipleSegments {
-                response_toggle: response_toggle,
-                position: position,
+                response_toggle: !response_toggle,
+                position: position + data_len,
             };
             ServerOutput::Output(response)
         }
@@ -834,13 +926,13 @@ impl<const N: usize> ServerMachine<N> {
         //use crate::sdo::machines::ClientOutput::*;
 
         match self.state {
-            ServerState::AwaitingData(b) => {
+            ServerState::AwaitingData => {
                 self.upload_length = data.into_buf(&mut self.upload_data);
-                //let n = data.len();
-                //self.upload_length = n;
-                //self.upload_data[0..n].copy_from_slice(data);
 
-                if b {
+                // The expedited/multi-segment decision must be based on the
+                // freshly provided data length, not on a flag captured at
+                // initiate time (the previous transfer's length is stale).
+                if self.upload_length <= 4 {
                     self.state = Idle;
 
                     let mut data = [0; 4];
@@ -849,8 +941,15 @@ impl<const N: usize> ServerMachine<N> {
                     let response = UploadSingleSegment(self.index, self.upload_length as u8, data);
                     ServerOutput::FinalOutput(response, ServerResult::UploadCompleted)
                 } else {
-                    let response_toggle = ToggleBit(false);
-                    self.continue_uploading(response_toggle, 0)
+                    // multi-segment upload: answer the initiate with the
+                    // initiate response first; the segments follow each
+                    // upload-segment request
+                    self.state = UploadingMultipleSegments {
+                        response_toggle: ToggleBit(false),
+                        position: 0,
+                    };
+                    let response = UploadInitMultiples(self.index, self.upload_length as u32);
+                    Output(response)
                 }
             }
 
@@ -862,7 +961,7 @@ impl<const N: usize> ServerMachine<N> {
                 Output(response)
             }
 
-            _ => Error(SdoError::Busy),
+            _ => self.error(SdoError::Busy),
         }
     }
 
@@ -1053,8 +1152,7 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
         match (&self.state, request) {
             (Idle, InitUpload(index)) => {
                 self.index = index;
-                let b = self.upload_length <= 4;
-                self.state = AwaitingData(b);
+                self.state = AwaitingData;
                 Data(self.index)
             }
 
@@ -1067,10 +1165,11 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 ClientRequest::UploadSegment(toggle),
             ) => {
                 if toggle != *response_toggle {
-                    Error(SdoError::ToggleMismatch)
+                    self.error(SdoError::ToggleMismatch)
                 } else {
-                    let new_position = position + 7;
-                    self.continue_uploading(!toggle, new_position)
+                    // the request announces the next segment: emit it with
+                    // the stored toggle at the stored offset
+                    self.continue_uploading(*response_toggle, *position)
                 }
             }
 
@@ -1089,13 +1188,14 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 self.index = index;
                 let length = length as usize;
                 if length > self.download_data.len() {
-                    Error(SdoError::BufferOverflow)
+                    self.error(SdoError::BufferOverflow)
                 } else {
                     self.download_length = length;
                     self.download_position = 0;
                     let toggle = ToggleBit(false);
                     self.state = DownloadingMultipleSegments(toggle, 0);
-                    let response = DownloadSegmentAck(toggle);
+                    // the initiate response, not a segment acknowledgement
+                    let response = DownloadInitAck(index);
                     Output(response)
                 }
             }
@@ -1105,27 +1205,42 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                 DownloadSegment(toggle, end, len, data),
             ) => {
                 if toggle != *expected_toggle {
-                    Error(SdoError::ToggleMismatch)
+                    self.error(SdoError::ToggleMismatch)
                 } else {
                     let data_len = len as usize;
                     let new_position = position + data_len;
                     if new_position > self.download_length {
-                        Error(SdoError::BufferOverflow)
+                        self.error(SdoError::BufferOverflow)
+                    } else if end && new_position != self.download_length {
+                        // the client signalled the end before the declared
+                        // size was transferred
+                        self.state = ServerState::Idle;
+                        Error(SdoError::TransferAborted(
+                            self.index,
+                            AbortCode::DataTypeDoesNotMatchLengthOfServiceParameterTooLow,
+                        ))
                     } else {
                         self.download_data[*position..new_position]
                             .copy_from_slice(&data[0..data_len]);
                         self.download_position = new_position;
-                        self.state = if end {
-                            ServerState::Idle
+                        // the acknowledgement echoes the toggle bit of the
+                        // received segment (CiA 301 7.2.4.3.4)
+                        let response = ServerResponse::DownloadSegmentAck(toggle);
+                        if end {
+                            self.state = ServerState::Idle;
+                            let result = DownloadCompleted(
+                                self.index,
+                                self.download_data.clone(),
+                                new_position,
+                            );
+                            FinalOutput(response, result)
                         } else {
-                            ServerState::DownloadingMultipleSegments(
+                            self.state = ServerState::DownloadingMultipleSegments(
                                 !*expected_toggle,
                                 new_position,
-                            )
-                        };
-
-                        let response = ServerResponse::DownloadSegmentAck(!toggle);
-                        Output(response)
+                            );
+                            Output(response)
+                        }
                     }
                 }
             }
@@ -1181,6 +1296,9 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                     self.download_last = data;
                     self.state = BlockDownloadAwaitingEnd { position };
                     Output(BlockDownloadResponse(seqno_in, blksize))
+                } else if position + 7 > self.download_data.len() {
+                    // the peer sent more data than the buffer can hold
+                    self.error(SdoError::BufferOverflow)
                 } else {
                     self.download_data[position..position + 7].copy_from_slice(&data);
                     let new_position = position + 7;
@@ -1281,7 +1399,7 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
                     } else {
                         match self.next_upload_segment() {
                             Some(resp) => Output(resp),
-                            None => Error(SdoError::Busy), // should not happen
+                            None => self.error(SdoError::Busy), // should not happen
                         }
                     }
                 }
@@ -1303,7 +1421,7 @@ impl<const N: usize> MealyMachine<ClientRequest, ServerOutput<N>> for ServerMach
             }
 
             (state, response) => {
-                Error(SdoError::ServerStateResponseMismatch(state.clone(), response))
+                self.error(SdoError::ServerStateResponseMismatch(state.clone(), response))
             }
         }
     }
@@ -1399,6 +1517,10 @@ mod tests {
                     break;
                 }
 
+                ClientOutput::FinalOutput(..) => {
+                    panic!("Unexpected FinalOutput!");
+                }
+
                 ClientOutput::NoFrame => {
                     panic!("Unexpected NoFrame!");
                 }
@@ -1483,6 +1605,10 @@ mod tests {
                 
                 ClientOutput::TransferCompleted => {
                     break;
+                }
+
+                ClientOutput::FinalOutput(..) => {
+                    panic!("Unexpected FinalOutput!");
                 }
 
                 ClientOutput::NoFrame => {
@@ -1570,6 +1696,10 @@ mod tests {
                     break;
                 }
 
+                ClientOutput::FinalOutput(..) => {
+                    panic!("Unexpected FinalOutput!");
+                }
+
                 ClientOutput::NoFrame => {
                     panic!("Unexpected NoFrame!");
                 }
@@ -1634,6 +1764,7 @@ mod tests {
                     ClientResult::DownloadCompleted(_) => panic!("Unexpected client finish!"),
                     _ => panic!("Wrong client result!"),
                 },
+                ClientOutput::FinalOutput(..) => panic!("Unexpected FinalOutput from the client!"),
                 ClientOutput::Error(err) => panic!("Client error: {:?}", err),
                 ClientOutput::TransferCompleted => panic!("Unexpected TransferCompleted!"),
                 ClientOutput::NoFrame => panic!("Unexpected NoFrame from the client!"),
@@ -1679,15 +1810,31 @@ mod tests {
                         }
                     }
                     FinalOutput(resp, result) => {
-                        if let ServerResult::UploadCompleted = result {
-                            client_out = client.transit(resp);
-                            continue;
-                        }
-                        panic!("Wrong server result!");
+                        // The server's upload-completion output is its
+                        // reaction to the client's end acknowledgement, which
+                        // is sent from the client-FinalOutput arm below; the
+                        // repeated end frame must not be re-fed into the
+                        // client. Unreachable here.
+                        let _ = (resp, result);
+                        panic!("Unexpected server final output in the main loop!");
                     }
                     NoFrame => panic!("Unexpected NoFrame from the server!"),
                     Error(err) => panic!("Server error: {:?}", err),
                 },
+                ClientOutput::FinalOutput(req, res) => {
+                    // app: send the end acknowledgement, then the server
+                    // completes and the client result carries the data
+                    match server.transit(req) {
+                        FinalOutput(_, ServerResult::UploadCompleted) => {}
+                        o => panic!("Unexpected server reaction to the end ack: {:?}", o),
+                    }
+                    match res {
+                        ClientResult::UploadCompleted(_ix, data, n, _) => {
+                            return data[..n].to_vec();
+                        }
+                        _ => panic!("Wrong client result!"),
+                    }
+                }
                 ClientOutput::Done(res) => match res {
                     ClientResult::UploadCompleted(_ix, data, n, _) => {
                         return data[..n].to_vec();
@@ -1941,15 +2088,21 @@ mod tests {
             ClientOutput::Output(ClientRequest::BlockUploadResponse(2, _))
         ));
 
-        // raw end frame: finishes the transfer
+        // raw end frame: finishes the transfer; the client acknowledges the
+        // end frame and reports the result together
         let mut end = [0u8; 8];
         end[0] = 0xC1 | (0 << 2); // no_data = 0
         end[1..3].copy_from_slice(&crc16_ccitt(&[9u8; 14], 0).to_le_bytes());
         let out = client.transit_frame(end);
-        assert!(matches!(
-            out,
-            ClientOutput::Done(ClientResult::UploadCompleted(_, _, 14, _))
-        ));
+        match out {
+            ClientOutput::FinalOutput(ClientRequest::BlockUploadEndAck, result) => {
+                assert!(matches!(
+                    result,
+                    ClientResult::UploadCompleted(_, _, 14, _)
+                ));
+            }
+            o => panic!("Expected the end acknowledgement output, got {:?}", o),
+        }
     }
 
     #[test]

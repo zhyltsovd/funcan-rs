@@ -1,13 +1,15 @@
-# funcan-rs 0.3.0 — Variable CAN Frame Formats
+# funcan-rs 0.3.1 — Variable CAN Frame Formats
 
-**Status:** implemented on branch `dsh-frames` (pending review). Design decisions
-confirmed by the maintainer on 2026-08; the plan below reflects the decisions and
-the final implementation, including one deviation forced by Rust's orphan rule
-(see §2.4).
+**Status:** implemented and released in **0.3.0** (branch `dsh-frames`, commit
+`e6cbcac` "version 0.3.0: frame format polymorphism"); unchanged in **0.3.1**
+(branch `dsh-3.1`, the SDO audit release). Design decisions were confirmed by the
+maintainer on 2026-08; the plan below reflects the decisions and the final
+implementation, including one deviation forced by Rust's orphan rule (see §2.4).
 
 **Branch:** `dsh-frames` (created from `dsh` at `5ea7d23`). Setup commit `e6cbcac`
-bumped the version to 0.3.0; the frame-polymorphism implementation is uncommitted
-for review.
+bumped the version to 0.3.0; the frame-polymorphism implementation landed there.
+Version 0.3.1 (branch `dsh-3.1`) carries the SDO audit fixes and does not touch
+the frame formats.
 
 **Goal.** Support both known CAN frame wire formats in the library through
 **parametric polymorphism**: a `CanFrame` trait plus two concrete implementations
@@ -34,7 +36,9 @@ compile time per use case.
 | `ae7b09d` ("fix") | — | 0.2.1 | corrects 13-byte offsets (`data 5..13`, `cobid 1..5`); cobid still **little-endian** |
 | `7424623` ("interim") | — | 0.2.1 | cobid switched to **big-endian** (`to_be_bytes`/`from_be_bytes`) — the current wire format |
 | `39325e2`, `5ea7d23` | — | 0.2.1 | SDO block transfer + documentation (current `dsh` HEAD) |
-| `e6cbcac` | now | **0.3.0** | version bump (this branch) |
+| `e6cbcac` | — | **0.3.0** | version bump: frame format polymorphism (branch `dsh-frames`) |
+| `a14ea83` | — | 0.3.0 | PDO `Consumer::deserialize` byte-offset fix for multi-object mappings |
+| (this release) | now | **0.3.1** | version bump: SDO audit fixes (branch `dsh-3.1`) — frame formats unchanged |
 
 `obsolete/raw.rs` (gitignored, not compiled) preserves the old **16-byte**
 `CANFrame` (with `can_cobid`/`can_len`/`can_data` fields, little-endian) as a

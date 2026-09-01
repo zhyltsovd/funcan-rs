@@ -11,9 +11,12 @@ audiences:
   signatures, wire-format tables, state tables, and an extension guide, so that a
   fresh agent can modify the codebase without re-scanning it.
 
-> **Freshness.** Last updated together with the SDO block-transfer implementation
-> (block download CiA 301 §7.2.4.7, block upload §7.2.4.8). Verify against `src/`
-> when in doubt — the code is the source of truth.
+> **Freshness.** Last updated together with the SDO audit (2026): fixes to the
+> segmented transfer codec/machine interop (toggle echo, initiate responses,
+> final-segment length), error recovery (machines return to Idle after any
+> error), the block upload end acknowledgement, the server abort-frame
+> encoding, empty block uploads, and buffer-overflow guards. Verify against
+> `src/` when in doubt — the code is the source of truth.
 
 ---
 
@@ -22,7 +25,7 @@ audiences:
 | Attribute | Value |
 |---|---|
 | Crate name | `funcan-rs` |
-| Version | 0.3.0 (branch `dsh-frames`; 0.2.1 on `dsh`) — single crate, **not** a workspace |
+| Version | 0.3.1 (branch `dsh-3.1`; 0.3.0 frame polymorphism on `dsh-frames`, 0.2.1 on `dsh`) — single crate, **not** a workspace |
 | License | MIT |
 | Repository | https://github.com/zhyltsovd/funcan-rs |
 | Edition / toolchain | 2021, `rust-toolchain.toml` pins channel `1.85` |
@@ -30,7 +33,7 @@ audiences:
 | Build scripts | none (`build.rs` absent) |
 | Target configs | none (`memory.x`, `.env`, `config/` absent) — platform independent |
 | Dependencies | `heapless =0.8` (exact), `paste = "*"` |
-| Tests | 48 library tests (`cargo test`) |
+| Tests | 77 library tests (`cargo test`) |
 | Status | Early stage; SDO (expedited / segmented / block) is the most complete service |
 
 The library provides **codecs, state machines, and facades** for CANopen services. It
@@ -42,10 +45,11 @@ machines). The required frame format is selected at compile time per device (see
 
 ### Working-tree state
 
-As of this writing the working tree contains **uncommitted changes** implementing
-SDO block transfer (modified: `src/sdo.rs`, `src/sdo/machines.rs`,
-`src/sdo/client.rs`, `src/sdo/server.rs`, `src/interfaces.rs`, `src/lib.rs`).
-`obsolete/` holds legacy code (gitignored, not compiled).
+Version 0.3.1 contains the SDO audit fixes (see the freshness note above): the
+segmented transfer interop fixes, error recovery, the block upload end
+acknowledgement, the abort-frame encoding fix and the new audit test suite
+`src/sdo/transfer_tests.rs`. `obsolete/` holds legacy code (gitignored, not
+compiled).
 
 ---
 
@@ -234,6 +238,7 @@ pub struct MorphMachine<'a, M, U, V, X, Y> { pub machine: M, pub decode: &'a dyn
 pub enum ClientOutput<const N: usize, RR, RW> {
     Output(ClientRequest),                    // send this frame
     Done(ClientResult<N, RR, RW>),            // transfer finished
+    FinalOutput(ClientRequest, ClientResult<N, RR, RW>), // send this frame, then handle the result like Done
     TransferCompleted,                        // responder already dispatched
     Error(SdoError),
     NoFrame,                                  // block mode: nothing to send (duplicate/ignored frame)
@@ -335,7 +340,10 @@ request, adjustable per sub-block via the ack):
    the transfer has `end = 1`), client replies per sub-block:
    `BlockUploadResponse(ackseq, new_blksize)`
 3. server: `BlockUploadEnd(n, crc)` → client verifies CRC/size →
-   `BlockUploadEndAck` → `Done(UploadCompleted)`
+   `FinalOutput(BlockUploadEndAck, UploadCompleted)` — the caller must transmit
+   the end acknowledgement, then handle the result exactly like `Done`
+   (the read responder travels inside the result). The server completes on
+   receiving the acknowledgement.
 
 **Retransmission:** if `ackseq < sent`, the sender rewinds its data pointer to
 `block_start + ackseq*7` and re-transmits the remainder of the sub-block **renumbered
@@ -420,6 +428,26 @@ loop {
     // else wait for the next incoming frame and feed it back:
     //   out = client.input(SdoInput::Frame(frame));
 }
+
+// --- block upload (read): the end frame is acknowledged explicitly ---
+let mut out = client.input(SdoInput::BlockRead(index, responder));
+loop {
+    match out {
+        ClientOutput::Output(req) => send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into())),
+        ClientOutput::FinalOutput(req, res) => {
+            send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into()));
+            // transfer complete; handle `res` exactly like a `Done` result:
+            // dispatch the responder carried inside `res`
+            break;
+        }
+        ClientOutput::Error(e) => { /* handle */ break }
+        _ => break,
+    }
+    if let Some(req) = client.pump() {
+        send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into()));
+        continue;
+    }
+}
 ```
 
 ### 8.2 SDO server
@@ -468,7 +496,7 @@ and are not controller formats.
 
 ```sh
 cargo check          # clean; only pre-existing warnings (raw.rs unused d0/d1, pdo.rs unused Results)
-cargo test           # 48 tests, all pass
+cargo test           # 78 tests, all pass
 cargo test --lib     # same suite (lib tests)
 ```
 
@@ -481,14 +509,16 @@ cargo test --lib     # same suite (lib tests)
 | `CanIndex` codec | `src/dictionary.rs` | write/read/inverse |
 | SDO segmented codecs (CiA 301 vectors) | `src/sdo.rs` | client upload/download init/segments, server responses, abort |
 | CRC-16/CCITT | `src/sdo.rs` | check value `0x31C3`, incremental == one-shot |
-| SDO block codecs | `src/sdo.rs` | initiate/ack/response/end/segment encodings, ambiguity proof |
+| SDO block codecs | `src/sdo.rs` | initiate/ack/response/end/segment encodings, ambiguity proof, server abort round-trip |
 | SDO segmented machines | `src/sdo/machines.rs` | client↔server upload/download of u32/u16 ("gasoline" loops) |
 | SDO block machines | `src/sdo/machines.rs` | single/multi-block download+upload exchanges, retransmission both directions, CRC mismatch aborts, raw `transit_frame` decoding |
+| SDO audit suite (multi-segment, consecutive, recovery) | `src/sdo/transfer_tests.rs` | multi-segment upload/download sweeps, consecutive transfers (segmented, block, mixed scripts), block-size sweeps, empty block upload, error recovery after abort/toggle/index/oversize/ackseq errors, malformed-peer buffer guards, abort codec round-trips, facade end-to-end transfers over `CanFrame13` with a test dictionary and responders |
 
 **Safety:** **zero `unsafe` blocks** in the crate — no FFI, no MMIO, no critical
 sections, platform-independent. Panics are used for API misuse (buffer-length
-asserts, `unreachable!()` on unknown NMT/state/command bytes, `todo!()` in
-`SdoServer::handle_frame` for a non-`TryFrom`-able index).
+asserts, `unreachable!()` on unknown NMT/state/command bytes). A non-`TryFrom`-able
+index in `SdoServer::handle_frame` returns `DictionaryUnsupportedIndex` (the
+machine is reset; the application may send a `ServerResponse::Abort`).
 
 ---
 
@@ -509,9 +539,17 @@ asserts, `unreachable!()` on unknown NMT/state/command bytes, `todo!()` in
   are protocol constants; `pst` (protocol switch threshold) is always 0 — no
   fallback to segmented transfer, and a received `pst` is ignored.
 - **Panics on malformed traffic**: `unreachable!()` for unknown NMT/state bytes
-  (bus noise → panic), `panic!` on missing PDO map entries.
-- **Empty transfers** (0 bytes): client emits an end request with `n=7`; server
-  rejects with `BufferOverflow` (mirrors CANopenNode).
+  (bus noise → panic), `panic!` on missing PDO map entries. Block-transfer buffer
+  overruns from malformed peers return `BufferOverflow` errors instead of panicking.
+- **Responder loss on error**: after an error the machine returns to Idle and
+  drops the pending responder without invoking it; the `Error` output is the
+  completion signal. There is no way to retrieve the dropped responder (a future
+  API could return it inside the error).
+- **Empty block download** (0 bytes): client emits an end request with `n=7`; server
+  rejects with `BufferOverflow` (mirrors CANopenNode). Empty block **upload** is
+  supported: the server skips straight to the end frame.
+- **Segmented download of size 0** (unspecified size, `s=0`): the server rejects
+  the first segment with `BufferOverflow` (the client never initiates one).
 - **Russian debug strings** in `sdo/client.rs` `Debug` impl.
 - **No CI**, no benchmarks, no fuzzing.
 
@@ -567,6 +605,11 @@ slice formats are per-format (see `docs/FORMAT.md`).
   and committed only at the end frame.
 - Retransmission renumbers segments from 1 after every response; both machines reset
   their seqno counter on response.
+- **Block upload end**: the client must send the end acknowledgement
+  (`ClientOutput::FinalOutput(BlockUploadEndAck, result)`) and the server only
+  completes upon receiving it.
+- **Every error returns the machine to Idle** (responders released); consecutive
+  transfers work without a manual reset.
 - `NoFrame` outputs mean "nothing to send" and are legal in block mode — the
   existing test drivers treat them as such.
 - All machine buffers are `[u8; N]` const-generic; capacity = `N` bytes, block size

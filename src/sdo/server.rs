@@ -1,6 +1,7 @@
 use core::marker::PhantomData;
 
 use crate::interfaces::*;
+use crate::machine::MealyMachine;
 use crate::raw::*;
 use crate::sdo::*;
 use crate::sdo::machines::*;
@@ -36,8 +37,10 @@ where
                     let data = self.dictionary.get(&index);
                     self.sdo.upload_data(&data)
                 } else {
-                    // send error
-                    todo!()
+                    // the index is not in the dictionary: abort the transfer
+                    // (the application may send a ServerResponse::Abort)
+                    self.sdo.initiate();
+                    Error(SdoError::DictionaryUnsupportedIndex(sindex))
                 }
             }
 

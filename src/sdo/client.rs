@@ -61,7 +61,6 @@ where
     }
     
     pub fn input(self: &mut Self, input: SdoInput<F, R, W, D>) -> ClientOutput<N, R, W> {
-        use crate::sdo::machines::ClientOutput::*;
         use crate::sdo::client::SdoInput::*;
         
         match input {
@@ -69,7 +68,7 @@ where
                 if self.sdo.is_ready() {
                     self.sdo.read(ix.into(), r)
                 } else {
-                    Error(SdoError::Busy)
+                    ClientOutput::Error(SdoError::Busy)
                 }
             }
 
@@ -78,7 +77,7 @@ where
                     self.sdo.write(ix.into(), x, r)
                 
                 } else {
-                    Error(SdoError::Busy)
+                    ClientOutput::Error(SdoError::Busy)
                 }
             }
 
@@ -86,7 +85,7 @@ where
                 if self.sdo.is_ready() {
                     self.sdo.read_block(ix.into(), r)
                 } else {
-                    Error(SdoError::Busy)
+                    ClientOutput::Error(SdoError::Busy)
                 }
             }
 
@@ -94,17 +93,21 @@ where
                 if self.sdo.is_ready() {
                     self.sdo.write_block(ix.into(), x, r)
                 } else {
-                    Error(SdoError::Busy)
+                    ClientOutput::Error(SdoError::Busy)
                 }
             }
 
             Frame(frame) => {
                 let result = self.sdo.transit_frame(frame.data());
 
-                if let Done(r) = result {
-                    self.handle_sdo_result(r)
-                } else {
-                    result
+                match result {
+                    // The final output carries the block upload end
+                    // acknowledgement together with the result: the caller
+                    // transmits the frame, then handles the result exactly
+                    // like `Done` (the responder travels inside the result).
+                    ClientOutput::FinalOutput(..) => result,
+                    ClientOutput::Done(r) => self.handle_sdo_result(r),
+                    other => other,
                 }
             }
         }

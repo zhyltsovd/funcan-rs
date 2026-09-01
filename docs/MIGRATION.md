@@ -22,6 +22,7 @@ parameter. The protocol machines, codecs, `CobId`, `CanIndex` and the
 | 0.2.0 | `CanFrame { cobid: CobId, … }` | 16-byte, LE (`[cobid LE][len][pad 3][data]`) | typed `CobId`; SocketCAN-style |
 | 0.2.1 | `CanFrame { cobid, len, data }` | 13-byte, BE (`[len][cobid BE][data]`) | "new format" transition; SDO block transfer added |
 | **0.3.0** | `CanFrame` trait + `CanFrame16` / `CanFrame13` | both, preserved per format | this guide |
+| 0.3.1 | unchanged | unchanged | SDO audit release: segmented interop fixes, error recovery, block upload end ack (`ClientOutput::FinalOutput`), abort encoding fix — see §6.1 |
 
 > Historical note (for context): the 16→13 byte switch happened inside 0.2.1
 > (`a81c977` "new format", followed by offset/endianness fixes). 0.3.0 makes both
@@ -50,7 +51,7 @@ you were on 0.2.0/0.1.x, `CanFrame16` restores your exact wire bytes.
 funcan-rs = "0.3"
 ```
 
-(Optionally pin `=0.3.0` for reproducible builds.)
+(Optionally pin `=0.3.1` for reproducible builds.)
 
 ---
 
@@ -178,6 +179,37 @@ let out = client.input(SdoInput::BlockWrite(index, value, responder)); // block 
 while let Some(req) = client.pump() { send(req); }
 // server side: server.pump()
 ```
+
+### 6.1 New in 0.3.1 (additive — one new output variant)
+
+0.3.1 fixes SDO protocol bugs (segmented download/upload interop, error recovery —
+machines return to Idle after any error —, the block upload end acknowledgement,
+the server abort-frame encoding, empty block uploads, buffer-overflow guards). The
+frame formats and the whole 0.3.0 API are unchanged **except** one new `ClientOutput`
+variant:
+
+- The client now **acknowledges the block upload end frame** (CiA 301 §7.2.4.3.12).
+  On the end frame it produces `ClientOutput::FinalOutput(BlockUploadEndAck, result)`
+  instead of `Done`: transmit the acknowledgement first, then handle the result
+  exactly like `Done` (the read responder travels inside the result).
+
+```rust
+// before (0.3.0): the client never acked the end frame
+//   -> the server stayed in its end state; a new transfer failed with
+//      ServerStateResponseMismatch
+// after (0.3.1):
+match client.input(SdoInput::Frame(frame)) {
+    ClientOutput::FinalOutput(req, result) => {
+        send_frame(CanFrame13::from_parts(CobId::SdoRequest(node_id), 8, req.into()));
+        // transfer complete; dispatch the responder from `result` as for `Done`
+    }
+    other => { /* as before */ }
+}
+```
+
+Code that matches `ClientOutput` **exhaustively** must add the new arm; matches
+with a catch-all (`_ => …`) compile unchanged. `docs/LIBRARY.md` §6.5/§7.3/§8.1
+documents the new flow.
 
 ---
 
